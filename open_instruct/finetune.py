@@ -21,6 +21,7 @@ import os
 import random
 import subprocess
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import timedelta
 from functools import partial
