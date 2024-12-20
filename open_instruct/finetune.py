@@ -936,6 +936,7 @@ def main(args: FlatArguments):
     start_time = time.time()
 
     timer_dict = defaultdict(lambda: CudaTimer())
+    rank = int(os.environ(["RANK"])
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         train_dataloader.set_epoch(epoch)
@@ -1020,6 +1021,7 @@ def main(args: FlatArguments):
 
                     timing_metrics = {k: timer.get_mean_time_s() for k, timer in timer_dict.items()}
                     metrics_to_log = {**metrics_to_log, **timing_metrics}
+                    print(f"[{rank=}]: {step=}, {metrics_to_log=}")
                     for timer in timer_dict.values():
                         timer.reset()
 
