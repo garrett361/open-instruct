@@ -959,15 +959,15 @@ def main(args: FlatArguments):
                     )
                     total_tokens = accelerator.gather(local_total_tokens).sum().item()
                     total_tokens_including_padding = accelerator.gather(total_token_including_padding).sum().item()
+                    elapsed_time = time.time() - start_time
                     metrics_to_log = {
                         "learning_rate": lr_scheduler.get_last_lr()[0],
                         "train_loss": avg_loss,
                         "total_tokens": total_tokens,
-                        "per_device_tps": total_tokens / accelerator.num_processes / (time.time() - start_time),
+                        "per_device_tps": total_tokens / accelerator.num_processes / elapsed_time,
                         "total_tokens_including_padding": total_tokens_including_padding,
-                        "per_device_tps_including_padding": total_tokens_including_padding
-                        / accelerator.num_processes
-                        / (time.time() - start_time),
+                        "per_device_tps_including_padding": total_tokens_including_padding / accelerator.num_processes / elapsed_time,
+                        "time_per_step": elapsed_time / (step + 1),
                     }
                     if args.load_balancing_loss:
                         avg_aux_loss = (
