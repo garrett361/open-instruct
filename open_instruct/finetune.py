@@ -70,6 +70,47 @@ from open_instruct.utils import (
 logger = get_logger(__name__)
 
 
+
+
+
+class CudaTimer:
+    def __init__(self) -> None:
+        self._start_events: list[torch.cuda.Event] = []
+        self._end_events: list[torch.cuda.Event] = []
+
+    def __enter__(self) -> None:
+        start = torch.cuda.Event(enable_timing=True)
+        stop = torch.cuda.Event(enable_timing=True)
+        start.record()
+        self._start_events.append(start)
+        self._end_events.append(stop)
+
+    def __exit__(self, *args, **kwargs) -> None:
+        self._end_events[-1].record()
+
+    def get_time_list_s(self) -> list[float]:
+        if not self._start_events:
+            return [0.0]
+        torch.cuda.synchronize()
+        time_list_s = [
+            start.elapsed_time(end) / 1e3
+            for start, end in zip(self._start_events, self._end_events)
+        ]
+        return time_list_s
+
+    def get_total_time_s(self) -> float:
+        return sum(self.get_time_list_s())
+
+    def get_mean_time_s(self) -> float:
+        time_list_s = self.get_time_list_s()
+        return sum(time_list_s) / len(time_list_s)
+
+    def reset(self) -> None:
+        self._start_events.clear()
+        self._end_events.clear()
+
+
+
 @dataclass
 class FlatArguments:
     """
@@ -892,6 +933,8 @@ def main(args: FlatArguments):
     local_total_tokens = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
     total_token_including_padding = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
     start_time = time.time()
+
+    timer_dict = defaultdict(lambda: CudaTimer())
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         train_dataloader.set_epoch(epoch)
@@ -906,46 +949,50 @@ def main(args: FlatArguments):
             local_total_tokens += batch["attention_mask"].sum()
             total_token_including_padding += batch["attention_mask"].numel()
             with accelerator.accumulate(model):
-                if args.load_balancing_loss:
-                    outputs = model(**batch, use_cache=False, output_router_logits=True)
-                else:
-                    outputs = model(**batch, use_cache=False)
-                if args.reduce_loss == "mean":
-                    loss = outputs.loss
-                else:
-                    # reduce loss is sum
-                    # this ensures that we weight all tokens in the dataset equally,
-                    # rather than weighting each overall example equally when
-                    # using high amounts of gradient accumulation.
-                    # this can result in > 5 point improvements in AlpacaEval
-                    # see https://github.com/huggingface/transformers/issues/24725 for
-                    # more discussion and details.
-                    logits = outputs.logits
-                    labels = batch["labels"]
-                    # Shift so that tokens < n predict n
-                    shift_logits = logits[..., :-1, :].contiguous()
-                    shift_labels = labels[..., 1:].contiguous()
-                    # Flatten the tokens
-                    loss_fct = torch.nn.CrossEntropyLoss(reduction="sum")
-                    shift_logits = shift_logits.view(-1, embedding_size)
-                    shift_labels = shift_labels.view(-1)
-                    # Enable model parallelism
-                    shift_labels = shift_labels.to(shift_logits.device)
-                    loss = loss_fct(shift_logits, shift_labels)
+                with timer_dict["fwd_time_s"]:
                     if args.load_balancing_loss:
-                        aux_loss = args.load_balancing_weight * outputs.aux_loss
-                        loss += aux_loss
-                # We keep track of the loss at each logged step
-                total_loss += loss.detach().float()
-                accelerator.backward(loss)
+                        outputs = model(**batch, use_cache=False, output_router_logits=True)
+                    else:
+                        outputs = model(**batch, use_cache=False)
+                    if args.reduce_loss == "mean":
+                        loss = outputs.loss
+                    else:
+                        # reduce loss is sum
+                        # this ensures that we weight all tokens in the dataset equally,
+                        # rather than weighting each overall example equally when
+                        # using high amounts of gradient accumulation.
+                        # this can result in > 5 point improvements in AlpacaEval
+                        # see https://github.com/huggingface/transformers/issues/24725 for
+                        # more discussion and details.
+                        logits = outputs.logits
+                        labels = batch["labels"]
+                        # Shift so that tokens < n predict n
+                        shift_logits = logits[..., :-1, :].contiguous()
+                        shift_labels = labels[..., 1:].contiguous()
+                        # Flatten the tokens
+                        loss_fct = torch.nn.CrossEntropyLoss(reduction="sum")
+                        shift_logits = shift_logits.view(-1, embedding_size)
+                        shift_labels = shift_labels.view(-1)
+                        # Enable model parallelism
+                        shift_labels = shift_labels.to(shift_logits.device)
+                        loss = loss_fct(shift_logits, shift_labels)
+                        if args.load_balancing_loss:
+                            aux_loss = args.load_balancing_weight * outputs.aux_loss
+                            loss += aux_loss
+                    # We keep track of the loss at each logged step
+                    total_loss += loss.detach().float()
+                with timer_dict["bwd_time_s"]:
+                    accelerator.backward(loss)
                 if args.load_balancing_loss:
                     total_aux_loss += aux_loss.detach().float()
                 # clip gradient norm. don't do this with deepspeed
                 if accelerator.sync_gradients and args.clip_grad_norm > 0:
-                    accelerator.clip_grad_norm_(model.parameters(), args.clip_grad_norm)
-                optimizer.step()
-                optimizer.zero_grad()
-                lr_scheduler.step()
+                    with timer_dict["clip_time_s"]:
+                        accelerator.clip_grad_norm_(model.parameters(), args.clip_grad_norm)
+                with timer_dict["optim_time_s"]:
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    lr_scheduler.step()
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
@@ -969,6 +1016,12 @@ def main(args: FlatArguments):
                         "per_device_tps_including_padding": total_tokens_including_padding / accelerator.num_processes / elapsed_time,
                         "time_per_step": elapsed_time / (step + 1),
                     }
+
+                    timing_metrics = {k: timer.get_mean_time_s() for k, timer in timer_dict}
+                    metrics_to_log = {**metrics_to_log, **timing_metrics}
+                    for timer in timer_dict.values():
+                        timer.reset()
+
                     if args.load_balancing_loss:
                         avg_aux_loss = (
                             accelerator.gather(total_aux_loss).mean().item()
