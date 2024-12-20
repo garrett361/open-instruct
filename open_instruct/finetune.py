@@ -827,6 +827,7 @@ def main(args: FlatArguments):
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if args.with_tracking:
+        print(f"In WITH_TRACKING block")
         experiment_config = vars(args)
         # TensorBoard cannot log Enums, need the raw value
         experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"]
@@ -983,6 +984,7 @@ def main(args: FlatArguments):
                             f"  Step: {completed_steps}, LR: {lr_scheduler.get_last_lr()[0]}, Loss: {avg_loss}, TPS: {total_tokens / (time.time() - start_time)}"
                         )
                     if args.with_tracking:
+                        print(f"In WITH_TRACKING block")
                         accelerator.log(
                             metrics_to_log,
                             step=completed_steps,
@@ -1103,4 +1105,5 @@ def main(args: FlatArguments):
 if __name__ == "__main__":
     parser = ArgumentParserPlus((FlatArguments))
     args = parser.parse()
+    print(f"{args=}")
     main(args)
