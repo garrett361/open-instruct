@@ -1018,7 +1018,7 @@ def main(args: FlatArguments):
                         "time_per_step": elapsed_time / (step + 1),
                     }
 
-                    timing_metrics = {k: timer.get_mean_time_s() for k, timer in timer_dict}
+                    timing_metrics = {k: timer.get_mean_time_s() for k, timer in timer_dict.items()}
                     metrics_to_log = {**metrics_to_log, **timing_metrics}
                     for timer in timer_dict.values():
                         timer.reset()
