@@ -949,11 +949,18 @@ def main(args: FlatArguments):
             active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
         else:
             active_dataloader = train_dataloader
+
+        n_tok_list = []
+        MAX_STEPS = 100
         for step, batch in enumerate(active_dataloader):
 
             print_rank(f"{step=}, {batch=}")
+            n_tok_list.append(batch['attention_mask'].sum())
             print_rank(f"{batch['attention_mask'].sum()=}, {batch['attention_mask'].numel()=}")
-            if step > 5:
+            if step > MAX_STEPS:
+                print(20* "#" + " RESULTS " +20* "#")
+                n_tok_t = torch.tensor(n_tok_list)
+                print_rank(f"{n_tok_t.mean()=}/n{n_tok_t.std()=}/n{n_tok_t.max()=}/n{n_tok_t.min()=}")
                 exit(0)
             # local_total_tokens += batch["attention_mask"].sum()
             # total_token_including_padding += batch["attention_mask"].numel()
