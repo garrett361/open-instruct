@@ -951,7 +951,7 @@ def main(args: FlatArguments):
             active_dataloader = train_dataloader
 
         # Get the first short batch element and just train with that element
-        MAX_SEQ_LEN = int(os.getenv("MAX_SEQ_LEN"), 256)
+        MAX_SEQ_LEN = int(os.getenv("MAX_SEQ_LEN", 256))
         for short_seq_len_batch in active_dataloader:
             if short_seq_len_batch["attention_mask"].sum() <= MAX_SEQ_LEN:
                 print_rank(f"Found short batch element: {short_seq_len_batch['attention_mask'].sum()=}\n{short_seq_len_batch=}")
