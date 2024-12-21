@@ -970,8 +970,8 @@ def main(args: FlatArguments):
 
                 # Histogram
                 bins= [2**n for n in range(13)]
-                bins_right_t = torch.tensor(bins[1:], dtype=torch.float32, device=accelerator.device)
-                hist = n_tok_t.histogram(bins_right_t)
+                bins_right_t = torch.tensor(bins[1:], dtype=torch.float32)
+                hist = n_tok_t.cpu().histogram(bins_right_t)
                 for count,  bin_right in zip(hist.hist, hist.bin_edges):
                     accelerator.print(f"Percent {bin_right // 2} < seq_len <= {bin_right}: {count / n_tok_t.numel()}")
 
