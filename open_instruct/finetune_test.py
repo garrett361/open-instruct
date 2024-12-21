@@ -959,8 +959,10 @@ def main(args: FlatArguments):
             print_rank(f"{batch['attention_mask'].sum()=}, {batch['attention_mask'].numel()=}")
             if step > MAX_STEPS:
                 print(20* "#" + " RESULTS " +20* "#")
-                n_tok_t = torch.tensor(n_tok_list, dtype=torch.float32)
-                print_rank(f"{n_tok_t.mean()=}/n{n_tok_t.std()=}/n{n_tok_t.max()=}/n{n_tok_t.min()=}")
+                n_tok_t = torch.tensor(n_tok_list, dtype=torch.float32, device=accelerator.device)
+                n_tok_t = accelerator.gather(n_tok_t)
+                if not rank:
+                    print_rank(f"{n_tok_t.mean()=}/n{n_tok_t.std()=}/n{n_tok_t.max()=}/n{n_tok_t.min()=}")
                 exit(0)
             # local_total_tokens += batch["attention_mask"].sum()
             # total_token_including_padding += batch["attention_mask"].numel()
@@ -968,9 +970,9 @@ def main(args: FlatArguments):
     #         with accelerator.accumulate(model):
     #             with timer_dict["fwd_time_s"]:
     #                 if args.load_balancing_loss:
-    #                     outputs = model(**batch, use_cache=False, output_router_logits=True)
+    #                     outputs = model(**batch, use_cache=false, output_router_logits=true)
     #                 else:
-    #                     outputs = model(**batch, use_cache=False)
+    #                     outputs = model(**batch, use_cache=false)
     #                 if args.reduce_loss == "mean":
     #                     loss = outputs.loss
     #                 else:
@@ -978,25 +980,25 @@ def main(args: FlatArguments):
     #                     # this ensures that we weight all tokens in the dataset equally,
     #                     # rather than weighting each overall example equally when
     #                     # using high amounts of gradient accumulation.
-    #                     # this can result in > 5 point improvements in AlpacaEval
+    #                     # this can result in > 5 point improvements in alpacaeval
     #                     # see https://github.com/huggingface/transformers/issues/24725 for
     #                     # more discussion and details.
     #                     logits = outputs.logits
     #                     labels = batch["labels"]
-    #                     # Shift so that tokens < n predict n
+    #                     # shift so that tokens < n predict n
     #                     shift_logits = logits[..., :-1, :].contiguous()
     #                     shift_labels = labels[..., 1:].contiguous()
-    #                     # Flatten the tokens
-    #                     loss_fct = torch.nn.CrossEntropyLoss(reduction="sum")
+    #                     # flatten the tokens
+    #                     loss_fct = torch.nn.crossentropyloss(reduction="sum")
     #                     shift_logits = shift_logits.view(-1, embedding_size)
     #                     shift_labels = shift_labels.view(-1)
-    #                     # Enable model parallelism
+    #                     # enable model parallelism
     #                     shift_labels = shift_labels.to(shift_logits.device)
     #                     loss = loss_fct(shift_logits, shift_labels)
     #                     if args.load_balancing_loss:
     #                         aux_loss = args.load_balancing_weight * outputs.aux_loss
     #                         loss += aux_loss
-    #                 # We keep track of the loss at each logged step
+    #                 # we keep track of the loss at each logged step
     #                 total_loss += loss.detach().float()
     #             with timer_dict["bwd_time_s"]:
     #                 accelerator.backward(loss)
@@ -1011,7 +1013,7 @@ def main(args: FlatArguments):
     #                 optimizer.zero_grad()
     #                 lr_scheduler.step()
     #
-    #         # Checks if the accelerator has performed an optimization step behind the scenes
+    #         # checks if the accelerator has performed an optimization step behind the scenes
     #         if accelerator.sync_gradients:
     #             progress_bar.update(1)
     #             completed_steps += 1
