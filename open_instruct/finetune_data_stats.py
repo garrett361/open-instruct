@@ -967,10 +967,13 @@ def main(args: FlatArguments):
                 accelerator.print(f"{n_tok_t.std()=}")
                 accelerator.print(f"{n_tok_t.max()=}")
                 accelerator.print(f"{n_tok_t.min()=}")
+                accelerator.print(f"Percent shorter than 32: {(n_tok_t < 32).sum() / n_tok_t.numel()}")
+                accelerator.print(f"Percent shorter than 64: {(n_tok_t < 64).sum() / n_tok_t.numel()}")
                 accelerator.print(f"Percent shorter than 128: {(n_tok_t < 128).sum() / n_tok_t.numel()}")
                 accelerator.print(f"Percent shorter than 256: {(n_tok_t < 256).sum() / n_tok_t.numel()}")
                 accelerator.print(f"Percent shorter than 512: {(n_tok_t < 512).sum() / n_tok_t.numel()}")
                 accelerator.print(f"Percent shorter than 1024: {(n_tok_t < 1024).sum() / n_tok_t.numel()}")
+                accelerator.print(f"Percent shorter than 2048: {(n_tok_t < 2048).sum() / n_tok_t.numel()}")
 
                 exit(0)
             # local_total_tokens += batch["attention_mask"].sum()
