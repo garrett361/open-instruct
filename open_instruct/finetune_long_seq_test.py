@@ -954,7 +954,7 @@ def main(args: FlatArguments):
         MIN_SEQ_LEN = int(os.getenv("MAX_SEQ_LEN", 2048))
         for long_seq_len_batch in active_dataloader:
             if long_seq_len_batch["attention_mask"].sum() >= MIN_SEQ_LEN:
-                print_rank(f"Found short batch element: {long_seq_len_batch['attention_mask'].sum()=}\n{long_seq_len_batch=}")
+                print_rank(f"Found long batch element: {long_seq_len_batch['attention_mask'].sum()=}\n{long_seq_len_batch=}")
                 break
         for step, _ in enumerate(active_dataloader):
             local_total_tokens += long_seq_len_batch["attention_mask"].sum()
