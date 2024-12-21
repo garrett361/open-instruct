@@ -959,7 +959,7 @@ def main(args: FlatArguments):
             print_rank(f"{batch['attention_mask'].sum()=}, {batch['attention_mask'].numel()=}")
             if step > MAX_STEPS:
                 print(20* "#" + " RESULTS " +20* "#")
-                n_tok_t = torch.tensor(n_tok_list)
+                n_tok_t = torch.tensor(n_tok_list, dtype=torch.float32)
                 print_rank(f"{n_tok_t.mean()=}/n{n_tok_t.std()=}/n{n_tok_t.max()=}/n{n_tok_t.min()=}")
                 exit(0)
             # local_total_tokens += batch["attention_mask"].sum()
