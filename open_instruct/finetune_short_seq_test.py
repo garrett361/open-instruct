@@ -1030,8 +1030,7 @@ def main(args: FlatArguments):
 
                     timing_metrics = {k: timer.get_mean_time_s() for k, timer in timer_dict.items()}
                     metrics_to_log = {**metrics_to_log, **timing_metrics}
-                    # accelerator.print(f"{metrics_to_log=}")
-                    print(f"[{rank=}]: {step=}, {metrics_to_log=}")
+                    accelerator.print(f"{metrics_to_log=}")
                     for timer in timer_dict.values():
                         timer.reset()
 
