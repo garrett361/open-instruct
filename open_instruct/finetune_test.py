@@ -936,7 +936,7 @@ def main(args: FlatArguments):
     start_time = time.time()
 
     timer_dict = defaultdict(lambda: CudaTimer())
-    rank = int(os.environ(["RANK"]))
+    rank = int(os.environ["RANK"])
     def print_rank(s):
         print(f"[{rank=}]: {s}")
     for epoch in range(starting_epoch, args.num_train_epochs):
