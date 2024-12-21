@@ -973,7 +973,7 @@ def main(args: FlatArguments):
                 bins_right_t = torch.tensor(bins[1:], dtype=torch.float32)
                 hist = n_tok_t.cpu().histogram(bins_right_t)
                 for count,  bin_right in zip(hist.hist, hist.bin_edges):
-                    accelerator.print(f"Percent {bin_right // 2} < seq_len <= {bin_right}: {count / n_tok_t.numel()}")
+                    accelerator.print(f"Percent {int(bin_right // 2)} < seq_len <= {int(bin_right)}: {count / n_tok_t.numel()}")
 
                 exit(0)
             # local_total_tokens += batch["attention_mask"].sum()
