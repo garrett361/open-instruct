@@ -962,7 +962,16 @@ def main(args: FlatArguments):
                 n_tok_t = torch.tensor(n_tok_list, dtype=torch.float32, device=accelerator.device)
                 n_tok_t = accelerator.gather(n_tok_t)
                 if not rank:
-                    print_rank(f"{n_tok_t.mean()=}/n{n_tok_t.std()=}/n{n_tok_t.max()=}/n{n_tok_t.min()=}")
+                    print_rank(f"{n_tok_t.mean()=}")
+                    print_rank(f"{n_tok_t.median()=}")
+                    print_rank(f"{n_tok_t.std()=}")
+                    print_rank(f"{n_tok_t.max()=}")
+                    print_rank(f"{n_tok_t.min()=}")
+                    print_rank(f"Percent shorter than 128: {(n_tok_t < 128).sum() / n_tok_t.numel()}")
+                    print_rank(f"Percent shorter than 256: {(n_tok_t < 256).sum() / n_tok_t.numel()}")
+                    print_rank(f"Percent shorter than 512: {(n_tok_t < 512).sum() / n_tok_t.numel()}")
+                    print_rank(f"Percent shorter than 1024: {(n_tok_t < 1024).sum() / n_tok_t.numel()}")
+
                 exit(0)
             # local_total_tokens += batch["attention_mask"].sum()
             # total_token_including_padding += batch["attention_mask"].numel()
