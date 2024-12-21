@@ -952,7 +952,7 @@ def main(args: FlatArguments):
         for step, batch in enumerate(active_dataloader):
 
             print_rank(f"{step=}, {batch=}")
-            print_rank(f"{batch["attention_mask"].sum()=}, {batch["attention_mask"].numel()=}")
+            print_rank(f"{batch['attention_mask'].sum()=}, {batch['attention_mask'].numel()=}")
             if step > 5:
                 exit(0)
             # local_total_tokens += batch["attention_mask"].sum()
