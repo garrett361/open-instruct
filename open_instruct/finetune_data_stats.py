@@ -951,7 +951,7 @@ def main(args: FlatArguments):
             active_dataloader = train_dataloader
 
         n_tok_list = []
-        MAX_STEPS = int(os.getenv("MAX_STEPS", 256))
+        MAX_STEPS = int(os.getenv("MAX_STEPS", 512))
         for step, batch in enumerate(active_dataloader):
 
             # print_rank(f"{step=}, {batch=}")
