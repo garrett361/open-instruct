@@ -950,240 +950,221 @@ def main(args: FlatArguments):
         else:
             active_dataloader = train_dataloader
 
-        n_tok_list = []
-        MAX_STEPS = int(os.getenv("MAX_STEPS", 1000))
-        for step, batch in enumerate(active_dataloader):
+        # Get the first short batch element and just train with that element
+        MAX_SEQ_LEN = int(os.getenv("MAX_SEQ_LEN"), 256)
+        for short_seq_len_batch in active_dataloader:
+            if short_seq_len_batch["attention_mask"].sum() <= MAX_SEQ_LEN:
+                print_rank(f"Found short batch element: {short_seq_len_batch['attention_mask'].sum()=}\n{short_seq_len_batch=}")
+                break
+        for step, _ in enumerate(active_dataloader):
+            local_total_tokens += short_seq_len_batch["attention_mask"].sum()
+            total_token_including_padding += short_seq_len_batch["attention_mask"].numel()
+            with accelerator.accumulate(model):
+                with timer_dict["fwd_time_s"]:
+                    if args.load_balancing_loss:
+                        outputs = model(**short_seq_len_batch, use_cache=False, output_router_logits=True)
+                    else:
+                        outputs = model(**short_seq_len_batch, use_cache=False)
+                    if args.reduce_loss == "mean":
+                        loss = outputs.loss
+                    else:
+                        # reduce loss is sum
+                        # this ensures that we weight all tokens in the dataset equally,
+                        # rather than weighting each overall example equally when
+                        # using high amounts of gradient accumulation.
+                        # this can result in > 5 point improvements in AlpacaEval
+                        # see https://github.com/huggingface/transformers/issues/24725 for
+                        # more discussion and details.
+                        logits = outputs.logits
+                        labels = short_seq_len_batch["labels"]
+                        # Shift so that tokens < n predict n
+                        shift_logits = logits[..., :-1, :].contiguous()
+                        shift_labels = labels[..., 1:].contiguous()
+                        # Flatten the tokens
+                        loss_fct = torch.nn.CrossEntropyLoss(reduction="sum")
+                        shift_logits = shift_logits.view(-1, embedding_size)
+                        shift_labels = shift_labels.view(-1)
+                        # Enable model parallelism
+                        shift_labels = shift_labels.to(shift_logits.device)
+                        loss = loss_fct(shift_logits, shift_labels)
+                        if args.load_balancing_loss:
+                            aux_loss = args.load_balancing_weight * outputs.aux_loss
+                            loss += aux_loss
+                    # We keep track of the loss at each logged step
+                    total_loss += loss.detach().float()
+                with timer_dict["bwd_time_s"]:
+                    accelerator.backward(loss)
+                if args.load_balancing_loss:
+                    total_aux_loss += aux_loss.detach().float()
+                # clip gradient norm. don't do this with deepspeed
+                if accelerator.sync_gradients and args.clip_grad_norm > 0:
+                    with timer_dict["clip_time_s"]:
+                        accelerator.clip_grad_norm_(model.parameters(), args.clip_grad_norm)
+                with timer_dict["optim_time_s"]:
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    lr_scheduler.step()
 
-            # print_rank(f"{step=}, {batch=}")
-            n_tok_list.append(batch['attention_mask'].sum())
-            # print_rank(f"{batch['attention_mask'].sum()=}, {batch['attention_mask'].numel()=}")
-            if step > MAX_STEPS:
-                n_tok_t = torch.tensor(n_tok_list, dtype=torch.float32, device=accelerator.device)
-                n_tok_t = accelerator.gather(n_tok_t)
-                accelerator.print(20* "#" + " RESULTS " +20* "#")
-                accelerator.print(f"Num sample: {n_tok_t.numel()=}")
-                accelerator.print(f"{n_tok_t.mean()=}")
-                accelerator.print(f"{n_tok_t.median()=}")
-                accelerator.print(f"{n_tok_t.std()=}")
-                accelerator.print(f"{n_tok_t.max()=}")
-                accelerator.print(f"{n_tok_t.min()=}")
+            # Checks if the accelerator has performed an optimization step behind the scenes
+            if accelerator.sync_gradients:
+                progress_bar.update(1)
+                completed_steps += 1
+                if args.logging_steps and completed_steps % args.logging_steps == 0:
+                    avg_loss = (
+                        accelerator.gather(total_loss).mean().item()
+                        / args.gradient_accumulation_steps
+                        / args.logging_steps
+                    )
+                    total_tokens = accelerator.gather(local_total_tokens).sum().item()
+                    total_tokens_including_padding = accelerator.gather(total_token_including_padding).sum().item()
+                    elapsed_time = time.time() - start_time
+                    metrics_to_log = {
+                        "learning_rate": lr_scheduler.get_last_lr()[0],
+                        "train_loss": avg_loss,
+                        "total_tokens": total_tokens,
+                        "per_device_tps": total_tokens / accelerator.num_processes / elapsed_time,
+                        "total_tokens_including_padding": total_tokens_including_padding,
+                        "per_device_tps_including_padding": total_tokens_including_padding / accelerator.num_processes / elapsed_time,
+                        "time_per_step": elapsed_time / (step + 1),
+                    }
 
-                # Histogram
-                bins= [2**n for n in range(13)]
-                bins_right_t = torch.tensor(bins[1:], dtype=torch.float32)
-                hist = n_tok_t.histogram(bins_right_t)
-                for count,  bin_right in zip(hist.hist, hist.bin_edges):
-                    accelerator.print(f"Percent {bin_right // 2} < seq_len <= {bin_right}: {count / n_tok_t.numel()}")
+                    timing_metrics = {k: timer.get_mean_time_s() for k, timer in timer_dict.items()}
+                    metrics_to_log = {**metrics_to_log, **timing_metrics}
+                    # accelerator.print(f"{metrics_to_log=}")
+                    print(f"[{rank=}]: {step=}, {metrics_to_log=}")
+                    for timer in timer_dict.values():
+                        timer.reset()
 
-                exit(0)
-            # local_total_tokens += batch["attention_mask"].sum()
-            # total_token_including_padding += batch["attention_mask"].numel()
+                    if args.load_balancing_loss:
+                        avg_aux_loss = (
+                            accelerator.gather(total_aux_loss).mean().item()
+                            / args.gradient_accumulation_steps
+                            / args.logging_steps
+                        )
+                        logger.info(
+                            f"  Step: {completed_steps}, LR: {lr_scheduler.get_last_lr()[0]}, Loss: {avg_loss}, Aux Loss: {avg_aux_loss}, TPS: {total_tokens / (time.time() - start_time)}"
+                        )
+                        metrics_to_log["aux_loss"] = avg_aux_loss
+                    else:
+                        logger.info(
+                            f"  Step: {completed_steps}, LR: {lr_scheduler.get_last_lr()[0]}, Loss: {avg_loss}, TPS: {total_tokens / (time.time() - start_time)}"
+                        )
+                    if args.with_tracking:
+                        accelerator.log(
+                            metrics_to_log,
+                            step=completed_steps,
+                        )
+                    total_loss = 0
+                    total_aux_loss = 0
 
-    #         with accelerator.accumulate(model):
-    #             with timer_dict["fwd_time_s"]:
-    #                 if args.load_balancing_loss:
-    #                     outputs = model(**batch, use_cache=false, output_router_logits=true)
-    #                 else:
-    #                     outputs = model(**batch, use_cache=false)
-    #                 if args.reduce_loss == "mean":
-    #                     loss = outputs.loss
-    #                 else:
-    #                     # reduce loss is sum
-    #                     # this ensures that we weight all tokens in the dataset equally,
-    #                     # rather than weighting each overall example equally when
-    #                     # using high amounts of gradient accumulation.
-    #                     # this can result in > 5 point improvements in alpacaeval
-    #                     # see https://github.com/huggingface/transformers/issues/24725 for
-    #                     # more discussion and details.
-    #                     logits = outputs.logits
-    #                     labels = batch["labels"]
-    #                     # shift so that tokens < n predict n
-    #                     shift_logits = logits[..., :-1, :].contiguous()
-    #                     shift_labels = labels[..., 1:].contiguous()
-    #                     # flatten the tokens
-    #                     loss_fct = torch.nn.crossentropyloss(reduction="sum")
-    #                     shift_logits = shift_logits.view(-1, embedding_size)
-    #                     shift_labels = shift_labels.view(-1)
-    #                     # enable model parallelism
-    #                     shift_labels = shift_labels.to(shift_logits.device)
-    #                     loss = loss_fct(shift_logits, shift_labels)
-    #                     if args.load_balancing_loss:
-    #                         aux_loss = args.load_balancing_weight * outputs.aux_loss
-    #                         loss += aux_loss
-    #                 # we keep track of the loss at each logged step
-    #                 total_loss += loss.detach().float()
-    #             with timer_dict["bwd_time_s"]:
-    #                 accelerator.backward(loss)
-    #             if args.load_balancing_loss:
-    #                 total_aux_loss += aux_loss.detach().float()
-    #             # clip gradient norm. don't do this with deepspeed
-    #             if accelerator.sync_gradients and args.clip_grad_norm > 0:
-    #                 with timer_dict["clip_time_s"]:
-    #                     accelerator.clip_grad_norm_(model.parameters(), args.clip_grad_norm)
-    #             with timer_dict["optim_time_s"]:
-    #                 optimizer.step()
-    #                 optimizer.zero_grad()
-    #                 lr_scheduler.step()
-    #
-    #         # checks if the accelerator has performed an optimization step behind the scenes
-    #         if accelerator.sync_gradients:
-    #             progress_bar.update(1)
-    #             completed_steps += 1
-    #             if args.logging_steps and completed_steps % args.logging_steps == 0:
-    #                 avg_loss = (
-    #                     accelerator.gather(total_loss).mean().item()
-    #                     / args.gradient_accumulation_steps
-    #                     / args.logging_steps
-    #                 )
-    #                 total_tokens = accelerator.gather(local_total_tokens).sum().item()
-    #                 total_tokens_including_padding = accelerator.gather(total_token_including_padding).sum().item()
-    #                 elapsed_time = time.time() - start_time
-    #                 metrics_to_log = {
-    #                     "learning_rate": lr_scheduler.get_last_lr()[0],
-    #                     "train_loss": avg_loss,
-    #                     "total_tokens": total_tokens,
-    #                     "per_device_tps": total_tokens / accelerator.num_processes / elapsed_time,
-    #                     "total_tokens_including_padding": total_tokens_including_padding,
-    #                     "per_device_tps_including_padding": total_tokens_including_padding / accelerator.num_processes / elapsed_time,
-    #                     "time_per_step": elapsed_time / (step + 1),
-    #                 }
-    #
-    #                 timing_metrics = {k: timer.get_mean_time_s() for k, timer in timer_dict.items()}
-    #                 metrics_to_log = {**metrics_to_log, **timing_metrics}
-    #                 print(f"[{rank=}]: {step=}, {metrics_to_log=}")
-    #                 for timer in timer_dict.values():
-    #                     timer.reset()
-    #
-    #                 if args.load_balancing_loss:
-    #                     avg_aux_loss = (
-    #                         accelerator.gather(total_aux_loss).mean().item()
-    #                         / args.gradient_accumulation_steps
-    #                         / args.logging_steps
-    #                     )
-    #                     logger.info(
-    #                         f"  Step: {completed_steps}, LR: {lr_scheduler.get_last_lr()[0]}, Loss: {avg_loss}, Aux Loss: {avg_aux_loss}, TPS: {total_tokens / (time.time() - start_time)}"
-    #                     )
-    #                     metrics_to_log["aux_loss"] = avg_aux_loss
-    #                 else:
-    #                     logger.info(
-    #                         f"  Step: {completed_steps}, LR: {lr_scheduler.get_last_lr()[0]}, Loss: {avg_loss}, TPS: {total_tokens / (time.time() - start_time)}"
-    #                     )
-    #                 if args.with_tracking:
-    #                     accelerator.log(
-    #                         metrics_to_log,
-    #                         step=completed_steps,
-    #                     )
-    #                 total_loss = 0
-    #                 total_aux_loss = 0
-    #
-    #             if isinstance(checkpointing_steps, int):
-    #                 if completed_steps % checkpointing_steps == 0:
-    #                     output_dir = f"step_{completed_steps}"
-    #                     if args.output_dir is not None:
-    #                         output_dir = os.path.join(args.output_dir, output_dir)
-    #                     accelerator.save_state(output_dir)
-    #                     # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
-    #                     with open(
-    #                         os.path.join(get_last_checkpoint_path(args, incomplete=True), "COMPLETED"), "w"
-    #                     ) as f:
-    #                         f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
-    #                     if accelerator.is_local_main_process:
-    #                         clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
-    #                     accelerator.wait_for_everyone()
-    #
-    #             if completed_steps >= args.max_train_steps:
-    #                 break
-    #
-    #     if checkpointing_steps == "epoch":
-    #         output_dir = f"epoch_{epoch}"
-    #         if args.output_dir is not None:
-    #             output_dir = os.path.join(args.output_dir, output_dir)
-    #         accelerator.save_state(output_dir)
-    #         # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
-    #         with open(os.path.join(get_last_checkpoint_path(args, incomplete=True), "COMPLETED"), "w") as f:
-    #             f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
-    #         if accelerator.is_local_main_process:
-    #             clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
-    #         accelerator.wait_for_everyone()
-    #
-    # if args.output_dir is not None:
-    #     save_with_accelerate(
-    #         accelerator,
-    #         model,
-    #         tokenizer,
-    #         args.output_dir,
-    #         args.use_lora,
-    #     )
-    #
-    # # remove all checkpoints to save space
-    # if accelerator.is_local_main_process:
-    #     clean_last_n_checkpoints(args.output_dir, keep_last_n_checkpoints=0)
-    #
-    # if is_beaker_job() and accelerator.is_main_process:
-    #     # dpo script only supports these two options right now for datasets
-    #     if args.dataset_mixer:
-    #         dataset_list = list(args.dataset_mixer.keys())
-    #     elif args.dataset_mixer_list:
-    #         dataset_list = args.dataset_mixer_list[::2]  # even indices
-    #     elif args.dataset_name:
-    #         dataset_list = [args.dataset_name]
-    #     else:
-    #         dataset_list = [args.train_file]
-    #     # mainly just focussing here on what would be useful for the leaderboard.
-    #     # wandb will have even more useful information.
-    #     metadata_blob = {
-    #         "model_name": args.exp_name,
-    #         "model_type": "sft",
-    #         "datasets": dataset_list,
-    #         "base_model": args.model_name_or_path,
-    #         "wandb_path": wandb_tracker.run.get_url(),
-    #         "beaker_experiment": beaker_config.beaker_experiment_url,
-    #         "beaker_datasets": beaker_config.beaker_dataset_id_urls,
-    #     }
-    #     # save metadata to the output directory. then it should also get pushed to HF.
-    #     with open(os.path.join(args.output_dir, "metadata.json"), "w") as f:
-    #         json.dump(metadata_blob, f)
-    #
-    #     # upload metadata to the dataset if set
-    #     if args.hf_metadata_dataset:
-    #         upload_metadata_to_hf(
-    #             metadata_blob,
-    #             "metadata.json",
-    #             args.hf_metadata_dataset,
-    #             "results/" + args.run_name,  # to match what the auto-evals name as.
-    #         )
-    #
-    #     if args.try_launch_beaker_eval_jobs:
-    #         command = f"""\
-    #         python mason.py  \
-    #             --cluster ai2/allennlp-cirrascale ai2/pluto-cirrascale ai2/neptune-cirrascale ai2/saturn-cirrascale ai2/jupiter-cirrascale-2 \
-    #             --priority low \
-    #             --preemptible \
-    #             --budget ai2/allennlp \
-    #             --workspace ai2/tulu-2-improvements \
-    #             --image nathanl/open_instruct_auto \
-    #             --pure_docker_mode \
-    #             --gpus 0 -- python scripts/wait_beaker_dataset_model_upload_then_evaluate_model.py \
-    #             --beaker_workload_id {beaker_config.beaker_workload_id} \
-    #             --upload_to_hf {args.hf_metadata_dataset} \
-    #             --model_name {args.run_name}
-    #         """
-    #         process = subprocess.Popen(["bash", "-c", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    #         stdout, stderr = process.communicate()
-    #         print(f"Submit jobs after model training is finished - Stdout:\n{stdout.decode()}")
-    #         print(f"Submit jobs after model training is finished - Stderr:\n{stderr.decode()}")
-    #         print(f"Submit jobs after model training is finished - process return code: {process.returncode}")
-    #
-    # if args.push_to_hub:
-    #     push_folder_to_hub(
-    #         accelerator,
-    #         args.output_dir,
-    #         args.hf_repo_id,
-    #         args.hf_repo_revision,
-    #     )
-    # accelerator.wait_for_everyone()
-    # if args.with_tracking:
-    #     accelerator.end_training()
+                if isinstance(checkpointing_steps, int):
+                    if completed_steps % checkpointing_steps == 0:
+                        output_dir = f"step_{completed_steps}"
+                        if args.output_dir is not None:
+                            output_dir = os.path.join(args.output_dir, output_dir)
+                        accelerator.save_state(output_dir)
+                        # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
+                        with open(
+                            os.path.join(get_last_checkpoint_path(args, incomplete=True), "COMPLETED"), "w"
+                        ) as f:
+                            f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
+                        if accelerator.is_local_main_process:
+                            clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
+                        accelerator.wait_for_everyone()
+
+                if completed_steps >= args.max_train_steps:
+                    break
+
+        if checkpointing_steps == "epoch":
+            output_dir = f"epoch_{epoch}"
+            if args.output_dir is not None:
+                output_dir = os.path.join(args.output_dir, output_dir)
+            accelerator.save_state(output_dir)
+            # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
+            with open(os.path.join(get_last_checkpoint_path(args, incomplete=True), "COMPLETED"), "w") as f:
+                f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
+            if accelerator.is_local_main_process:
+                clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
+            accelerator.wait_for_everyone()
+
+    if args.output_dir is not None:
+        save_with_accelerate(
+            accelerator,
+            model,
+            tokenizer,
+            args.output_dir,
+            args.use_lora,
+        )
+
+    # remove all checkpoints to save space
+    if accelerator.is_local_main_process:
+        clean_last_n_checkpoints(args.output_dir, keep_last_n_checkpoints=0)
+
+    if is_beaker_job() and accelerator.is_main_process:
+        # dpo script only supports these two options right now for datasets
+        if args.dataset_mixer:
+            dataset_list = list(args.dataset_mixer.keys())
+        elif args.dataset_mixer_list:
+            dataset_list = args.dataset_mixer_list[::2]  # even indices
+        elif args.dataset_name:
+            dataset_list = [args.dataset_name]
+        else:
+            dataset_list = [args.train_file]
+        # mainly just focussing here on what would be useful for the leaderboard.
+        # wandb will have even more useful information.
+        metadata_blob = {
+            "model_name": args.exp_name,
+            "model_type": "sft",
+            "datasets": dataset_list,
+            "base_model": args.model_name_or_path,
+            "wandb_path": wandb_tracker.run.get_url(),
+            "beaker_experiment": beaker_config.beaker_experiment_url,
+            "beaker_datasets": beaker_config.beaker_dataset_id_urls,
+        }
+        # save metadata to the output directory. then it should also get pushed to HF.
+        with open(os.path.join(args.output_dir, "metadata.json"), "w") as f:
+            json.dump(metadata_blob, f)
+
+        # upload metadata to the dataset if set
+        if args.hf_metadata_dataset:
+            upload_metadata_to_hf(
+                metadata_blob,
+                "metadata.json",
+                args.hf_metadata_dataset,
+                "results/" + args.run_name,  # to match what the auto-evals name as.
+            )
+
+        if args.try_launch_beaker_eval_jobs:
+            command = f"""\
+            python mason.py  \
+                --cluster ai2/allennlp-cirrascale ai2/pluto-cirrascale ai2/neptune-cirrascale ai2/saturn-cirrascale ai2/jupiter-cirrascale-2 \
+                --priority low \
+                --preemptible \
+                --budget ai2/allennlp \
+                --workspace ai2/tulu-2-improvements \
+                --image nathanl/open_instruct_auto \
+                --pure_docker_mode \
+                --gpus 0 -- python scripts/wait_beaker_dataset_model_upload_then_evaluate_model.py \
+                --beaker_workload_id {beaker_config.beaker_workload_id} \
+                --upload_to_hf {args.hf_metadata_dataset} \
+                --model_name {args.run_name}
+            """
+            process = subprocess.Popen(["bash", "-c", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+            print(f"Submit jobs after model training is finished - Stdout:\n{stdout.decode()}")
+            print(f"Submit jobs after model training is finished - Stderr:\n{stderr.decode()}")
+            print(f"Submit jobs after model training is finished - process return code: {process.returncode}")
+
+    if args.push_to_hub:
+        push_folder_to_hub(
+            accelerator,
+            args.output_dir,
+            args.hf_repo_id,
+            args.hf_repo_revision,
+        )
+    accelerator.wait_for_everyone()
+    if args.with_tracking:
+        accelerator.end_training()
 
 
 if __name__ == "__main__":
