@@ -45,6 +45,7 @@ from transformers import (
     AutoTokenizer,
     BitsAndBytesConfig,
     DataCollatorForSeq2Seq,
+    DataCollatorWithFlattening,
     GPT2Tokenizer,
     GPTNeoXTokenizerFast,
     LlamaTokenizer,
@@ -354,6 +355,8 @@ class FlatArguments:
     """Whether to launch beaker evaluation jobs after training"""
     hf_metadata_dataset: Optional[str] = "allenai/tulu-3-evals"
     """What dataset to upload the metadata to. If unset, don't upload metadata"""
+    padding_free: bool = False
+    """Whether to use padding-free collation via DataCollatorWithFlattening"""
 
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:
@@ -748,10 +751,17 @@ def main(args: FlatArguments):
         logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # DataLoaders creation:
+    if args.padding_free:
+        accelerator.print("Using padding-free collation")
+        collate_fn=DataCollatorWithFlattening()
+    else:
+        collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest")
+
+
     train_dataloader = DataLoader(
         train_dataset,
         shuffle=True,
-        collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest"),
+        collate_fn=collate_fn,
         batch_size=args.per_device_train_batch_size,
     )
 
