@@ -974,8 +974,18 @@ def main(args: FlatArguments):
         else:
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
-            local_total_tokens += batch["attention_mask"].sum()
-            total_token_including_padding += batch["attention_mask"].numel()
+            print(f"[rank={accelerator.process_index}]: {batch=}")
+            if "attention_mask" in batch:
+                local_total_tokens += batch["attention_mask"].sum()
+                total_token_including_padding += batch["attention_mask"].numel()
+            elif "position_ids" in batch:
+                tokens_in_batch = batch["position_ids"].numel()
+                local_total_tokens += tokens_in_batch
+                total_token_including_padding += tokens_in_batch
+            else:
+                raise ValueError(
+                    f"Expected attention_mask or position_ids in batch, found {batch=}"
+                )
             with accelerator.accumulate(model):
                 if args.load_balancing_loss:
                     outputs = model(**batch, use_cache=False, output_router_logits=True)
