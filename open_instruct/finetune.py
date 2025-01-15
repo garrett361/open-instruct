@@ -355,10 +355,12 @@ class FlatArguments:
     """Whether to launch beaker evaluation jobs after training"""
     hf_metadata_dataset: Optional[str] = "allenai/tulu-3-evals"
     """What dataset to upload the metadata to. If unset, don't upload metadata"""
-    padding_free: bool = False
-    """Whether to use padding-free collation via DataCollatorWithFlattening"""
-    project_name: bool = field(
+    padding_free: bool = field(
         default=False,
+        metadata={"help": "Whether to use padding-free collation via DataCollatorWithFlattening"},
+    )
+    project_name: str = field(
+        default="open_instruct_internal",
         metadata={"help": "Project name, e.g for wandb tracking. "},
     )
 
