@@ -886,7 +886,7 @@ def main(args: FlatArguments):
     if accelerator.process_index == 0:
         print(f"{model=}")
         print("DTYPE check")
-        np_iter = model.parameters()
+        np_iter = model.named_parameters()
         for _ in range(3):
             n, p = next(np_iter)
             print(f"{n=}, {p=}")
