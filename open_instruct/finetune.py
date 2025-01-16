@@ -1041,10 +1041,18 @@ def main(args: FlatArguments):
                     )
                     total_tokens = accelerator.gather(local_total_tokens).sum().item()
                     total_tokens_including_padding = accelerator.gather(total_token_including_padding).sum().item()
+                    avg_tokens_per_batch = (
+                        total_tokens
+                        / accelerator.num_processes
+                        / args.per_device_train_batch_size
+                        / args.gradient_accumulation_steps
+                        / completed_steps
+                    )
                     metrics_to_log = {
                         "learning_rate": lr_scheduler.get_last_lr()[0],
                         "train_loss": avg_loss,
                         "total_tokens": total_tokens,
+                        "avg_tokens_per_batch": avg_tokens_per_batch,
                         "per_device_tps": total_tokens / accelerator.num_processes / (time.time() - start_time),
                         "total_tokens_including_padding": total_tokens_including_padding,
                         "per_device_tps_including_padding": total_tokens_including_padding
