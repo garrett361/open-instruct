@@ -765,12 +765,34 @@ def main(args: FlatArguments):
             tensors = torch.arange(
                 args.per_device_train_batch_size * args.max_seq_length,
                 device=accelerator.device,
-            ).reshape(args.per_device_train_batch_size, args.max_seq_length)
-            batch = {
-                "input_ids": tensors,
-                "labels": tensors,
-                "attention_mask": torch.ones_like(tensors),
-            }
+            )
+            if args.padding_free:
+                position_ids = torch.cat(
+                    [
+                        torch.full(
+                            (args.max_seq_length,),
+                            n,
+                            device=accelerator.device,
+                            dtype=torch.int32,
+                        )
+                        for n in range(args.per_device_train_batch_size)
+                    ],
+                    dim=0,
+                )
+                batch = {
+                    "input_ids": tensors,
+                    "labels": tensors,
+                    "position_ids": position_ids,
+                }
+            else:
+                tensors = tensors.reshape(
+                    args.per_device_train_batch_size, args.max_seq_length
+                )
+                batch = {
+                    "input_ids": tensors,
+                    "labels": tensors,
+                    "attention_mask": torch.ones_like(tensors),
+                }
             while True:
                 yield batch
 
@@ -930,8 +952,12 @@ def main(args: FlatArguments):
         else:
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
-            local_total_tokens += batch["attention_mask"].sum()
-            total_token_including_padding += batch["attention_mask"].numel()
+            if args.padding_free:
+                local_total_tokens += batch["position_ids"].sum()
+                total_token_including_padding += batch["position_ids"].numel()
+            else:
+                local_total_tokens += batch["attention_mask"].sum()
+                total_token_including_padding += batch["attention_mask"].numel()
             with accelerator.accumulate(model):
                 if args.load_balancing_loss:
                     outputs = model(**batch, use_cache=False, output_router_logits=True)
