@@ -996,6 +996,7 @@ def main(args: FlatArguments):
                         logger.info(
                             f"  Step: {completed_steps}, LR: {lr_scheduler.get_last_lr()[0]}, Loss: {avg_loss}, TPS: {total_tokens / (time.time() - start_time)}"
                         )
+                        logger.info(f"{metrics_to_log=}")
                     if args.with_tracking:
                         accelerator.log(
                             metrics_to_log,
