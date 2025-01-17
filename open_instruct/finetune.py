@@ -515,40 +515,40 @@ def main(args: FlatArguments):
 
     accelerator.wait_for_everyone()
 
-    if args.dataset_name is not None:
-        # Downloading and loading a dataset from the hub.
-        raw_datasets = load_dataset(
-            args.dataset_name,
-            args.dataset_config_name,
-        )
-    elif args.dataset_mixer is not None:
-        # mixing datasets via config
-        raw_datasets = get_datasets(
-            args.dataset_mixer,
-            configs=args.dataset_config_name,
-            splits=["train"],
-            save_data_dir=args.dataset_mix_dir if accelerator.is_main_process else None,
-            columns_to_keep=["messages"],
-        )
-    elif args.dataset_mixer_list is not None:
-        # mixing datasets via config
-        raw_datasets = get_datasets(
-            args.dataset_mixer_list,
-            configs=args.dataset_config_name,
-            splits=["train"],
-            save_data_dir=args.dataset_mix_dir if accelerator.is_main_process else None,
-            columns_to_keep=["messages"],
-        )
-    else:
-        data_files = {}
-        dataset_args = {}
-        if args.train_file is not None:
-            data_files["train"] = args.train_file
-        raw_datasets = load_dataset(
-            "json",
-            data_files=data_files,
-            **dataset_args,
-        )
+    # if args.dataset_name is not None:
+    #     # Downloading and loading a dataset from the hub.
+    #     raw_datasets = load_dataset(
+    #         args.dataset_name,
+    #         args.dataset_config_name,
+    #     )
+    # elif args.dataset_mixer is not None:
+    #     # mixing datasets via config
+    #     raw_datasets = get_datasets(
+    #         args.dataset_mixer,
+    #         configs=args.dataset_config_name,
+    #         splits=["train"],
+    #         save_data_dir=args.dataset_mix_dir if accelerator.is_main_process else None,
+    #         columns_to_keep=["messages"],
+    #     )
+    # elif args.dataset_mixer_list is not None:
+    #     # mixing datasets via config
+    #     raw_datasets = get_datasets(
+    #         args.dataset_mixer_list,
+    #         configs=args.dataset_config_name,
+    #         splits=["train"],
+    #         save_data_dir=args.dataset_mix_dir if accelerator.is_main_process else None,
+    #         columns_to_keep=["messages"],
+    #     )
+    # else:
+    #     data_files = {}
+    #     dataset_args = {}
+    #     if args.train_file is not None:
+    #         data_files["train"] = args.train_file
+    #     raw_datasets = load_dataset(
+    #         "json",
+    #         data_files=data_files,
+    #         **dataset_args,
+    #     )
 
     # Load pretrained model and tokenizer
     if args.config_name:
@@ -722,38 +722,51 @@ def main(args: FlatArguments):
     elif args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
 
-    train_dataset = raw_datasets["train"]
-    # debugging tool for fewer samples
-    if args.max_train_samples is not None:
-        max_train_samples = min(len(train_dataset), args.max_train_samples)
-        logger.info(f"Limiting training samples to {max_train_samples} from {len(train_dataset)}.")
-        train_dataset = train_dataset.select(range(max_train_samples))
+    # train_dataset = raw_datasets["train"]
+    # # debugging tool for fewer samples
+    # if args.max_train_samples is not None:
+    #     max_train_samples = min(len(train_dataset), args.max_train_samples)
+    #     logger.info(f"Limiting training samples to {max_train_samples} from {len(train_dataset)}.")
+    #     train_dataset = train_dataset.select(range(max_train_samples))
+    #
+    # with accelerator.main_process_first():
+    #     train_dataset = train_dataset.map(
+    #         partial(encode_sft_example, tokenizer=tokenizer, max_seq_length=args.max_seq_length),
+    #         batched=False,
+    #         num_proc=args.preprocessing_num_workers,
+    #         load_from_cache_file=not args.overwrite_cache,
+    #         remove_columns=[
+    #             name for name in train_dataset.column_names if name not in ["input_ids", "labels", "attention_mask"]
+    #         ],
+    #         desc="Tokenizing and reformatting instruction data",
+    #     )
+    #     train_dataset.set_format(type="pt")
+    #     train_dataset = train_dataset.filter(lambda example: (example["labels"] != -100).any())
+    #
+    # # Log a few random samples from the training set:
+    # for index in random.sample(range(len(train_dataset)), 3):
+    #     logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+    #
+    # # DataLoaders creation:
+    # train_dataloader = DataLoader(
+    #     train_dataset,
+    #     shuffle=True,
+    #     collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest"),
+    #     batch_size=args.per_device_train_batch_size,
+    # )
+    def dummy_dataloader():
+        tensors = torch.arange(
+            args.per_device_train_batch_size * args.max_seq_length
+        ).reshape(args.per_device_train_batch_size, args.max_seq_length)
+        batch = {
+            "input_ids": tensors,
+            "labels": tensors,
+            "attention_mask": torch.ones_like(tensors),
+        }
+        while True:
+            yield batch
 
-    with accelerator.main_process_first():
-        train_dataset = train_dataset.map(
-            partial(encode_sft_example, tokenizer=tokenizer, max_seq_length=args.max_seq_length),
-            batched=False,
-            num_proc=args.preprocessing_num_workers,
-            load_from_cache_file=not args.overwrite_cache,
-            remove_columns=[
-                name for name in train_dataset.column_names if name not in ["input_ids", "labels", "attention_mask"]
-            ],
-            desc="Tokenizing and reformatting instruction data",
-        )
-        train_dataset.set_format(type="pt")
-        train_dataset = train_dataset.filter(lambda example: (example["labels"] != -100).any())
-
-    # Log a few random samples from the training set:
-    for index in random.sample(range(len(train_dataset)), 3):
-        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
-
-    # DataLoaders creation:
-    train_dataloader = DataLoader(
-        train_dataset,
-        shuffle=True,
-        collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest"),
-        batch_size=args.per_device_train_batch_size,
-    )
+    train_dataloader = dummy_dataloader()
 
     # Optimizer
     # Split weights in two groups, one with weight decay and the other not.
@@ -854,7 +867,7 @@ def main(args: FlatArguments):
     total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
     logger.info("***** Running training *****")
-    logger.info(f"  Num examples = {len(train_dataset)}")
+    # logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {args.num_train_epochs}")
     logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
@@ -881,9 +894,9 @@ def main(args: FlatArguments):
         else:
             # need to multiply `gradient_accumulation_steps` to reflect real steps
             resume_step = int(training_difference.replace("step_", "")) * args.gradient_accumulation_steps
-            starting_epoch = resume_step // len(train_dataloader)
+            starting_epoch = 0 #resume_step // len(train_dataloader)
             completed_steps = resume_step // args.gradient_accumulation_steps
-            resume_step -= starting_epoch * len(train_dataloader)
+            resume_step -= 0 #starting_epoch * len(train_dataloader)
 
     print(f"Starting from epoch {starting_epoch} and step {completed_steps}.")
     # update the progress_bar if load from checkpoint
