@@ -356,9 +356,11 @@ class FlatArguments:
     """What dataset to upload the metadata to. If unset, don't upload metadata"""
     padding_free: bool = field(
         default=False,
-        metadata={
-            "help": "Whether to use padding-free data or not.",
-        },
+        metadata={"help": "Whether to use padding-free collation via DataCollatorWithFlattening"},
+    )
+    project_name: str = field(
+        default="open_instruct_internal",
+        metadata={"help": "Project name, e.g for wandb tracking. "},
     )
 
     def __post_init__(self):
@@ -893,7 +895,7 @@ def main(args: FlatArguments):
         if is_beaker_job():
             experiment_config.update(vars(beaker_config))
         accelerator.init_trackers(
-            "open_instruct_internal",
+            args.project_name,
             experiment_config,
             init_kwargs={
                 "wandb": {
@@ -1042,7 +1044,7 @@ def main(args: FlatArguments):
                         logger.info(
                             f"  Step: {completed_steps}, LR: {lr_scheduler.get_last_lr()[0]}, Loss: {avg_loss}, TPS: {total_tokens / (time.time() - start_time)}"
                         )
-                        logger.info(f"{metrics_to_log=}")
+                    logger.info(f"{metrics_to_log=}")
                     if args.with_tracking:
                         accelerator.log(
                             metrics_to_log,
