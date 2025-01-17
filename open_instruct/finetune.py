@@ -754,19 +754,23 @@ def main(args: FlatArguments):
     #     collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest"),
     #     batch_size=args.per_device_train_batch_size,
     # )
-    def dummy_dataloader():
-        tensors = torch.arange(
-            args.per_device_train_batch_size * args.max_seq_length
-        ).reshape(args.per_device_train_batch_size, args.max_seq_length)
-        batch = {
-            "input_ids": tensors,
-            "labels": tensors,
-            "attention_mask": torch.ones_like(tensors),
-        }
-        while True:
-            yield batch
+    class DummyLoader:
+        def __iter__(self):
+            tensors = torch.arange(
+                args.per_device_train_batch_size * args.max_seq_length
+            ).reshape(args.per_device_train_batch_size, args.max_seq_length)
+            batch = {
+                "input_ids": tensors,
+                "labels": tensors,
+                "attention_mask": torch.ones_like(tensors),
+            }
+            while True:
+                yield batch
 
-    train_dataloader = dummy_dataloader()
+        def __len__(self):
+            return 1000
+
+    train_dataloader = DummyLoader()
 
     # Optimizer
     # Split weights in two groups, one with weight decay and the other not.
