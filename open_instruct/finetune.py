@@ -770,14 +770,14 @@ def main(args: FlatArguments):
                 position_ids = torch.cat(
                     [
                         torch.full(
-                            (args.max_seq_length,),
+                            (1, args.max_seq_length,),
                             n,
                             device=accelerator.device,
                             dtype=torch.int32,
                         )
                         for n in range(args.per_device_train_batch_size)
                     ],
-                    dim=0,
+                    dim=-1,
                 )
                 batch = {
                     "input_ids": tensors,
