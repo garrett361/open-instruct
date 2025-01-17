@@ -965,8 +965,9 @@ def main(args: FlatArguments):
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
             if args.padding_free:
-                local_total_tokens += batch["position_ids"].numel()
-                total_token_including_padding += batch["position_ids"].numel()
+                tokens_in_batch = batch["position_ids"].numel()
+                local_total_tokens += tokens_in_batch
+                total_token_including_padding += tokens_in_batch
             else:
                 local_total_tokens += batch["attention_mask"].sum()
                 total_token_including_padding += batch["attention_mask"].numel()
