@@ -354,6 +354,12 @@ class FlatArguments:
     """Whether to launch beaker evaluation jobs after training"""
     hf_metadata_dataset: Optional[str] = "allenai/tulu-3-evals"
     """What dataset to upload the metadata to. If unset, don't upload metadata"""
+    padding_free: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to use padding-free data or not.",
+        },
+    )
 
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:
