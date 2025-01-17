@@ -757,7 +757,8 @@ def main(args: FlatArguments):
     class DummyLoader:
         def __iter__(self):
             tensors = torch.arange(
-                args.per_device_train_batch_size * args.max_seq_length, device=accelerator.device
+                args.per_device_train_batch_size * args.max_seq_length,
+                device=accelerator.device,
             ).reshape(args.per_device_train_batch_size, args.max_seq_length)
             batch = {
                 "input_ids": tensors,
@@ -769,6 +770,9 @@ def main(args: FlatArguments):
 
         def __len__(self):
             return 1000
+
+        def set_epoch(self, *args, **kwargs):
+            return
 
     train_dataloader = DummyLoader()
 
