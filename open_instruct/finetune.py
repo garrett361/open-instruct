@@ -767,10 +767,16 @@ def main(args: FlatArguments):
                 device=accelerator.device,
             )
             if args.padding_free:
+                tensors = tensors.reshape(
+                    1, args.per_device_train_batch_size * args.max_seq_length
+                )
                 position_ids = torch.cat(
                     [
                         torch.full(
-                            (1, args.max_seq_length,),
+                            (
+                                1,
+                                args.max_seq_length,
+                            ),
                             n,
                             device=accelerator.device,
                             dtype=torch.int32,
