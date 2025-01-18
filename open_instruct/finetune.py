@@ -732,6 +732,15 @@ def main(args: FlatArguments):
     elif args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
 
+    class DummyDataset:
+        def __len__(self):
+            return 1000
+
+        def __getitem__(self, idx):
+            tensor=torch.arange(args.max_seq_length, device=accelerator.device)
+            batch = {"input_ids": tensor, "labels": tensor}
+            return batch
+
     train_dataset = raw_datasets["train"]
     # debugging tool for fewer samples
     if args.max_train_samples is not None:
@@ -925,7 +934,7 @@ def main(args: FlatArguments):
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
             if "attention_mask" in batch:
-                local_total_tokens += batch["attention_mask"].sum()
+                local_total_tokens += batcdh["attention_mask"].sum()
                 total_token_including_padding += batch["attention_mask"].numel()
             elif "position_ids" in batch:
                 tokens_in_batch = batch["position_ids"].numel()
