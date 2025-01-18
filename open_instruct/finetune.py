@@ -915,7 +915,7 @@ def main(args: FlatArguments):
     total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
     logger.info("***** Running training *****")
-    # logger.info(f"  Num examples = {len(train_dataset)}")
+    logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {args.num_train_epochs}")
     logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
@@ -964,13 +964,17 @@ def main(args: FlatArguments):
         else:
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
-            if args.padding_free:
+            if "attention_mask" in batch:
+                local_total_tokens += batch["attention_mask"].sum()
+                total_token_including_padding += batch["attention_mask"].numel()
+            elif "position_ids" in batch:
                 tokens_in_batch = batch["position_ids"].numel()
                 local_total_tokens += tokens_in_batch
                 total_token_including_padding += tokens_in_batch
             else:
-                local_total_tokens += batch["attention_mask"].sum()
-                total_token_including_padding += batch["attention_mask"].numel()
+                raise ValueError(
+                    f"Expected attention_mask or position_ids in batch, found {batch=}"
+                )
             with accelerator.accumulate(model):
                 if args.load_balancing_loss:
                     outputs = model(**batch, use_cache=False, output_router_logits=True)
