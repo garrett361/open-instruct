@@ -937,7 +937,7 @@ def main(args: FlatArguments):
             for k, v in batch.items():
                 print(f"[rank={accelerator.process_index}]: {k=}, {v.shape=}")
             if "attention_mask" in batch:
-                local_total_tokens += batcdh["attention_mask"].sum()
+                local_total_tokens += batch["attention_mask"].sum()
                 total_token_including_padding += batch["attention_mask"].numel()
             elif "position_ids" in batch:
                 tokens_in_batch = batch["position_ids"].numel()
