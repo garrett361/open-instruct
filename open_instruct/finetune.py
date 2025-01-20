@@ -1058,120 +1058,120 @@ def main(args: FlatArguments):
                     total_loss = 0
                     total_aux_loss = 0
 
-                if isinstance(checkpointing_steps, int):
-                    if completed_steps % checkpointing_steps == 0:
-                        output_dir = f"step_{completed_steps}"
-                        if args.output_dir is not None:
-                            output_dir = os.path.join(args.output_dir, output_dir)
-                        accelerator.save_state(output_dir)
-                        # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
-                        with open(
-                            os.path.join(get_last_checkpoint_path(args, incomplete=True), "COMPLETED"), "w"
-                        ) as f:
-                            f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
-                        if accelerator.is_local_main_process:
-                            clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
-                        accelerator.wait_for_everyone()
+                # if isinstance(checkpointing_steps, int):
+                #     if completed_steps % checkpointing_steps == 0:
+                #         output_dir = f"step_{completed_steps}"
+                #         if args.output_dir is not None:
+                #             output_dir = os.path.join(args.output_dir, output_dir)
+                #         accelerator.save_state(output_dir)
+                #         # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
+                #         with open(
+                #             os.path.join(get_last_checkpoint_path(args, incomplete=True), "COMPLETED"), "w"
+                #         ) as f:
+                #             f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
+                #         if accelerator.is_local_main_process:
+                #             clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
+                #         accelerator.wait_for_everyone()
 
                 if completed_steps >= args.max_train_steps:
                     break
 
-        if checkpointing_steps == "epoch":
-            output_dir = f"epoch_{epoch}"
-            if args.output_dir is not None:
-                output_dir = os.path.join(args.output_dir, output_dir)
-            accelerator.save_state(output_dir)
-            # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
-            with open(os.path.join(get_last_checkpoint_path(args, incomplete=True), "COMPLETED"), "w") as f:
-                f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
-            if accelerator.is_local_main_process:
-                clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
-            accelerator.wait_for_everyone()
+        # if checkpointing_steps == "epoch":
+        #     output_dir = f"epoch_{epoch}"
+        #     if args.output_dir is not None:
+        #         output_dir = os.path.join(args.output_dir, output_dir)
+        #     accelerator.save_state(output_dir)
+        #     # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
+        #     with open(os.path.join(get_last_checkpoint_path(args, incomplete=True), "COMPLETED"), "w") as f:
+        #         f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
+        #     if accelerator.is_local_main_process:
+        #         clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
+        #     accelerator.wait_for_everyone()
 
-    if args.output_dir is not None:
-        save_with_accelerate(
-            accelerator,
-            model,
-            tokenizer,
-            args.output_dir,
-            args.use_lora,
-        )
+    # if args.output_dir is not None:
+    #     save_with_accelerate(
+    #         accelerator,
+    #         model,
+    #         tokenizer,
+    #         args.output_dir,
+    #         args.use_lora,
+    #     )
 
-    # remove all checkpoints to save space
-    if accelerator.is_local_main_process:
-        clean_last_n_checkpoints(args.output_dir, keep_last_n_checkpoints=0)
-
-    if (
-        args.try_auto_save_to_beaker
-        and accelerator.is_main_process
-        and len(beaker_config.beaker_dataset_id_urls) > 0
-        and args.output_dir.rstrip("/") != "/output"
-    ):
-        shutil.copytree(args.output_dir, "/output", dirs_exist_ok=True)
-
-    if is_beaker_job() and accelerator.is_main_process:
-        # dpo script only supports these two options right now for datasets
-        if args.dataset_mixer:
-            dataset_list = list(args.dataset_mixer.keys())
-        elif args.dataset_mixer_list:
-            dataset_list = args.dataset_mixer_list[::2]  # even indices
-        elif args.dataset_name:
-            dataset_list = [args.dataset_name]
-        else:
-            dataset_list = [args.train_file]
-        # mainly just focussing here on what would be useful for the leaderboard.
-        # wandb will have even more useful information.
-        metadata_blob = {
-            "model_name": args.exp_name,
-            "model_type": "sft",
-            "datasets": dataset_list,
-            "base_model": args.model_name_or_path,
-            "wandb_path": wandb_tracker.run.get_url(),
-            "beaker_experiment": beaker_config.beaker_experiment_url,
-            "beaker_datasets": beaker_config.beaker_dataset_id_urls,
-        }
-        # save metadata to the output directory. then it should also get pushed to HF.
-        with open(os.path.join(args.output_dir, "metadata.json"), "w") as f:
-            json.dump(metadata_blob, f)
-
-        # upload metadata to the dataset if set
-        if args.hf_metadata_dataset:
-            upload_metadata_to_hf(
-                metadata_blob,
-                "metadata.json",
-                args.hf_metadata_dataset,
-                "results/" + args.run_name,  # to match what the auto-evals name as.
-            )
-
-        if args.try_launch_beaker_eval_jobs:
-            command = f"""\
-            python mason.py  \
-                --cluster ai2/ganymede-cirrascale ai2/ceres-cirrascale ai2/neptune-cirrascale ai2/saturn-cirrascale ai2/jupiter-cirrascale-2 \
-                --priority low \
-                --preemptible \
-                --budget ai2/allennlp \
-                --workspace ai2/tulu-2-improvements \
-                --image nathanl/open_instruct_auto \
-                --pure_docker_mode \
-                --gpus 0 -- python scripts/wait_beaker_dataset_model_upload_then_evaluate_model.py \
-                --beaker_workload_id {beaker_config.beaker_workload_id} \
-                --upload_to_hf {args.hf_metadata_dataset} \
-                --model_name {args.run_name} \
-                --run_id {wandb_tracker.run.get_url()}
-            """
-            process = subprocess.Popen(["bash", "-c", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate()
-            print(f"Submit jobs after model training is finished - Stdout:\n{stdout.decode()}")
-            print(f"Submit jobs after model training is finished - Stderr:\n{stderr.decode()}")
-            print(f"Submit jobs after model training is finished - process return code: {process.returncode}")
-
-    if args.push_to_hub:
-        push_folder_to_hub(
-            accelerator,
-            args.output_dir,
-            args.hf_repo_id,
-            args.hf_repo_revision,
-        )
+    # # remove all checkpoints to save space
+    # if accelerator.is_local_main_process:
+    #     clean_last_n_checkpoints(args.output_dir, keep_last_n_checkpoints=0)
+    #
+    # if (
+    #     args.try_auto_save_to_beaker
+    #     and accelerator.is_main_process
+    #     and len(beaker_config.beaker_dataset_id_urls) > 0
+    #     and args.output_dir.rstrip("/") != "/output"
+    # ):
+    #     shutil.copytree(args.output_dir, "/output", dirs_exist_ok=True)
+    #
+    # if is_beaker_job() and accelerator.is_main_process:
+    #     # dpo script only supports these two options right now for datasets
+    #     if args.dataset_mixer:
+    #         dataset_list = list(args.dataset_mixer.keys())
+    #     elif args.dataset_mixer_list:
+    #         dataset_list = args.dataset_mixer_list[::2]  # even indices
+    #     elif args.dataset_name:
+    #         dataset_list = [args.dataset_name]
+    #     else:
+    #         dataset_list = [args.train_file]
+    #     # mainly just focussing here on what would be useful for the leaderboard.
+    #     # wandb will have even more useful information.
+    #     metadata_blob = {
+    #         "model_name": args.exp_name,
+    #         "model_type": "sft",
+    #         "datasets": dataset_list,
+    #         "base_model": args.model_name_or_path,
+    #         "wandb_path": wandb_tracker.run.get_url(),
+    #         "beaker_experiment": beaker_config.beaker_experiment_url,
+    #         "beaker_datasets": beaker_config.beaker_dataset_id_urls,
+    #     }
+    #     # save metadata to the output directory. then it should also get pushed to HF.
+    #     with open(os.path.join(args.output_dir, "metadata.json"), "w") as f:
+    #         json.dump(metadata_blob, f)
+    #
+    #     # upload metadata to the dataset if set
+    #     if args.hf_metadata_dataset:
+    #         upload_metadata_to_hf(
+    #             metadata_blob,
+    #             "metadata.json",
+    #             args.hf_metadata_dataset,
+    #             "results/" + args.run_name,  # to match what the auto-evals name as.
+    #         )
+    #
+    #     if args.try_launch_beaker_eval_jobs:
+    #         command = f"""\
+    #         python mason.py  \
+    #             --cluster ai2/ganymede-cirrascale ai2/ceres-cirrascale ai2/neptune-cirrascale ai2/saturn-cirrascale ai2/jupiter-cirrascale-2 \
+    #             --priority low \
+    #             --preemptible \
+    #             --budget ai2/allennlp \
+    #             --workspace ai2/tulu-2-improvements \
+    #             --image nathanl/open_instruct_auto \
+    #             --pure_docker_mode \
+    #             --gpus 0 -- python scripts/wait_beaker_dataset_model_upload_then_evaluate_model.py \
+    #             --beaker_workload_id {beaker_config.beaker_workload_id} \
+    #             --upload_to_hf {args.hf_metadata_dataset} \
+    #             --model_name {args.run_name} \
+    #             --run_id {wandb_tracker.run.get_url()}
+    #         """
+    #         process = subprocess.Popen(["bash", "-c", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    #         stdout, stderr = process.communicate()
+    #         print(f"Submit jobs after model training is finished - Stdout:\n{stdout.decode()}")
+    #         print(f"Submit jobs after model training is finished - Stderr:\n{stderr.decode()}")
+    #         print(f"Submit jobs after model training is finished - process return code: {process.returncode}")
+    #
+    # if args.push_to_hub:
+    #     push_folder_to_hub(
+    #         accelerator,
+    #         args.output_dir,
+    #         args.hf_repo_id,
+    #         args.hf_repo_revision,
+    #     )
     accelerator.wait_for_everyone()
     if args.with_tracking:
         accelerator.end_training()
