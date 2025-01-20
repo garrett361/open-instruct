@@ -774,15 +774,10 @@ def main(args: FlatArguments):
                 )
                 position_ids = torch.cat(
                     [
-                        torch.full(
-                            (
-                                1,
+                        torch.arange(
                                 args.max_seq_length,
-                            ),
-                            n,
                             device=accelerator.device,
-                            dtype=torch.int32,
-                        )
+                        )[None]
                         for n in range(args.per_device_train_batch_size)
                     ],
                     dim=-1,
