@@ -957,9 +957,6 @@ def main(args: FlatArguments):
         else:
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
-            print(f"[rank={accelerator.process_index}]: {batch=}")
-            for k, v in batch.items():
-                print(f"[rank={accelerator.process_index}]: {k=}, {v.shape=}")
             if "attention_mask" in batch:
                 local_total_tokens += batch["attention_mask"].sum()
                 total_token_including_padding += batch["attention_mask"].numel()
