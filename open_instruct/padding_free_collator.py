@@ -57,6 +57,6 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
             ret["cu_seq_lens_q"] = ret["cu_seq_lens_k"] = cu_seq_lens
             ret["max_length_q"] = ret["max_length_k"] = max_length
         ret = {
-            k: torch.cat(v, dim=0) if torch.istensor(v) else v for k, v in ret.items()
+            k: torch.cat(v, dim=0) if torch.is_tensor(v) else v for k, v in ret.items()
         }
         return ret
