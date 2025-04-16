@@ -1160,4 +1160,6 @@ def main(args: FlatArguments):
 if __name__ == "__main__":
     parser = ArgumentParserPlus((FlatArguments))
     args = parser.parse()
+    if os.environ["RANK"] == "0":
+        print(f"{args=}")
     main(args)
