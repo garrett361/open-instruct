@@ -764,7 +764,7 @@ def main(args: FlatArguments):
     else:
         collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest")
 
-    print("Creating dataloader")
+    accelerator.print("Creating dataloader")
     train_dataloader = DataLoader(
         train_dataset,
         shuffle=True,
@@ -786,7 +786,7 @@ def main(args: FlatArguments):
         },
     ]
 
-    print("Creating optimizer")
+    accelerator.print("Creating optimizer")
     if args.use_qlora:
         from bitsandbytes.optim import AdamW
 
