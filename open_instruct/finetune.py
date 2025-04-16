@@ -341,7 +341,7 @@ class FlatArguments:
         default=0.5,
         metadata={"help": "Weight for load balancing loss if applicable."},
     )
-    try_auto_save_to_beaker: bool = True
+    try_auto_save_to_beaker: bool = False
     """Whether to try to save the model to Beaker dataset `/output` after training"""
     push_to_hub: bool = True
     """Whether to upload the saved model to huggingface"""
