@@ -944,7 +944,6 @@ def main(args: FlatArguments):
                     f"Expected attention_mask or position_ids in batch, found {batch=}"
                 )
             with accelerator.accumulate(model):
-                accelerator.print(f"{batch=}")
                 if args.load_balancing_loss:
                     outputs = model(**batch, use_cache=False, output_router_logits=True)
                 else:
