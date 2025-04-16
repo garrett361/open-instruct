@@ -31,6 +31,7 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
             return_tensors = self.return_tensors
         if separator_id is None:
             separator_id = self.separator_id
+        assert self.return_flash_attn_kwargs, "Only should be used with return_flash_attn_kwargs=True"
         if self.return_flash_attn_kwargs:
             cu_seq_lens = [0]
             max_length = 0
@@ -56,7 +57,6 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
         if self.return_flash_attn_kwargs:
             ret["cu_seq_lens_q"] = ret["cu_seq_lens_k"] = cu_seq_lens
             ret["max_length_q"] = ret["max_length_k"] = max_length
-        ret = {
-            k: torch.cat(v, dim=0) if torch.is_tensor(v) else v for k, v in ret.items()
-        }
+        ret["input_ids"] = torch.cat(ret["input_ids"], dim=0)
+        ret["labels"] = torch.cat(ret["labels"], dim=0)
         return ret
