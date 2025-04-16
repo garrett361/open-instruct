@@ -1031,6 +1031,14 @@ def main(args: FlatArguments):
                         )
                         / 2**30,
                     }
+
+                    sec_per_step = (time.time() - start_time) / completed_steps
+                    steps_remaining = args.max_train_steps - completed_steps
+                    secs_remaining = steps_remaining * sec_per_step
+                    accelerator.print(
+                        f"Approx. time remaining: {timedelta(seconds=secs_remaining)}"
+                    )
+
                     if args.load_balancing_loss:
                         avg_aux_loss = (
                             accelerator.gather(total_aux_loss).mean().item()
@@ -1068,7 +1076,6 @@ def main(args: FlatArguments):
                         if accelerator.is_local_main_process:
                             clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
                         accelerator.wait_for_everyone()
-
                 if completed_steps >= args.max_train_steps:
                     break
 
