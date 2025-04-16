@@ -935,6 +935,10 @@ def main(args: FlatArguments):
                 tokens_in_batch = batch["position_ids"].numel()
                 local_total_tokens += tokens_in_batch
                 total_token_including_padding += tokens_in_batch
+            elif "cu_seq_lens_q" in batch:
+                tokens_in_batch = batch["cu_seq_lens_q"][-1]
+                local_total_tokens += tokens_in_batch
+                total_token_including_padding += tokens_in_batch
             else:
                 raise ValueError(
                     f"Expected attention_mask or position_ids in batch, found {batch=}"
