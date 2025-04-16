@@ -945,7 +945,7 @@ def main(args: FlatArguments):
                 total_token_including_padding += tokens_in_batch
             else:
                 raise ValueError(
-                    f"Expected attention_mask or position_ids in batch, found {batch=}"
+                    f"Expected attention_mask or position_ids or cu_seq_lens_q in batch, found {batch=}"
                 )
             with accelerator.accumulate(model):
                 if args.load_balancing_loss:
