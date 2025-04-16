@@ -764,7 +764,7 @@ def main(args: FlatArguments):
     else:
         collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest")
 
-
+    print("Creating dataloader")
     train_dataloader = DataLoader(
         train_dataset,
         shuffle=True,
@@ -785,6 +785,8 @@ def main(args: FlatArguments):
             "weight_decay": 0.0,
         },
     ]
+
+    print("Creating optimizer")
     if args.use_qlora:
         from bitsandbytes.optim import AdamW
 
@@ -826,6 +828,8 @@ def main(args: FlatArguments):
         num_warmup_steps=int(num_training_steps_for_scheduler * args.warmup_ratio),
     )
     # Prepare everything with `accelerator`.
+
+    print("Preparing accelerator")
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )
