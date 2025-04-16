@@ -829,7 +829,7 @@ def main(args: FlatArguments):
     )
     # Prepare everything with `accelerator`.
 
-    print("Preparing accelerator")
+    accelerator.print("Preparing accelerator")
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )
