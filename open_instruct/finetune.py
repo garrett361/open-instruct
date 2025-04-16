@@ -469,10 +469,9 @@ def main(args: FlatArguments):
     # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
     # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
     # in the environment
-    args.run_name = f"{args.exp_name}_{int(time.time())}"
 
     # Truncate to 64 chars. Required for wandb.
-    args.run_name=args.run_name[:64]
+    args.run_name=args.exp_name[:64]
 
     if args.push_to_hub:
         if args.hf_repo_id is None:  # auto-generate one
