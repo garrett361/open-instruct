@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import torch
 from transformers import DefaultDataCollator
+from transformers.data.data_collator import default_data_collator
 
 
 @dataclass
@@ -15,11 +16,9 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
     - no padding will be added, returns `input_ids`, `labels` and `position_ids`
     """
 
-    def __init__(
-        self, *args, return_flash_attn_kwargs=True, separator_id=-100, **kwargs
-    ):
+    def __init__(self, *args, return_position_ids=True, separator_id=-100, **kwargs):
         super().__init__(*args, **kwargs)
-        self.return_flash_attn_kwargs = return_flash_attn_kwargs
+        self.return_position_ids = return_position_ids
         self.separator_id = separator_id
         warnings.warn(
             "Using `DataCollatorWithFlattening` will flatten the entire mini batch into single long sequence."
@@ -31,12 +30,10 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
             return_tensors = self.return_tensors
         if separator_id is None:
             separator_id = self.separator_id
-        assert self.return_flash_attn_kwargs, "Only should be used with return_flash_attn_kwargs=True"
-        if self.return_flash_attn_kwargs:
-            cu_seq_lens = [0]
-            max_length = 0
         is_labels_provided = "labels" in features[0]
         ret = {"input_ids": [], "labels": []}
+        if self.return_position_ids:
+            ret.update({"position_ids": []})
         separator = torch.tensor(
             [separator_id],
             dtype=features[0]["input_ids"].dtype,
@@ -51,12 +48,13 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
             else:
                 ret["labels"].append(separator)
                 ret["labels"].append(input_ids[1:])
-            if self.return_flash_attn_kwargs:
-                cu_seq_lens.append(cu_seq_lens[-1] + len(input_ids))
-                max_length = max(max_length, len(input_ids))
-        if self.return_flash_attn_kwargs:
-            ret["cu_seq_lens_q"] = ret["cu_seq_lens_k"] = cu_seq_lens
-            ret["max_length_q"] = ret["max_length_k"] = max_length
-        ret["input_ids"] = torch.cat(ret["input_ids"], dim=0)
-        ret["labels"] = torch.cat(ret["labels"], dim=0)
-        return ret
+            if self.return_position_ids:
+                ret["position_ids"].append(
+                    torch.arange(
+                        input_ids.numel(),
+                        dtype=input_ids.dtype,
+                        device=input_ids.device,
+                    )
+                )
+        ret = {k: torch.cat(v, dim=0) for k, v in ret.items()}
+        return default_data_collator([ret], return_tensors)
