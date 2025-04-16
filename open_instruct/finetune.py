@@ -1023,6 +1023,14 @@ def main(args: FlatArguments):
                         "per_device_tps_including_padding": total_tokens_including_padding
                         / accelerator.num_processes
                         / (time.time() - start_time),
+                        "reserved_mem_GiB": torch.cuda.max_memory_reserved(
+                            device=torch.cuda.current_device()
+                        )
+                        / 2**30,
+                        "allocated_mem_GiB": torch.cuda.max_memory_allocated(
+                            device=torch.cuda.current_device()
+                        )
+                        / 2**30,
                     }
                     if args.load_balancing_loss:
                         avg_aux_loss = (
