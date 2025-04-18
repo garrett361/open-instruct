@@ -325,6 +325,12 @@ class FlatArguments:
         default=3,
         metadata={"help": "How many checkpoints to keep in the output directory. -1 for all."},
     )
+    clean_checkpoints_at_end: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to clean up all previous checkpoints at the end of the run.",
+        },
+    )
     fused_optimizer: bool = field(
         default=True,
         metadata={
@@ -1104,7 +1110,7 @@ def main(args: FlatArguments):
         )
 
     # remove all checkpoints to save space
-    if accelerator.is_local_main_process:
+    if args.clean_checkpoints_at_end and accelerator.is_local_main_process:
         clean_last_n_checkpoints(args.output_dir, keep_last_n_checkpoints=0)
 
     if (
