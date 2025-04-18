@@ -563,11 +563,12 @@ def main(args: FlatArguments):
         dataset_args = {}
         if args.train_file is not None:
             data_files["train"] = args.train_file
-        raw_datasets = load_dataset(
-            "json",
-            data_files=data_files,
-            **dataset_args,
-        )
+        with accelerator.main_process_first():
+            raw_datasets = load_dataset(
+                "json",
+                data_files=data_files,
+                **dataset_args,
+            )
 
     # Load pretrained model and tokenizer
     if args.config_name:
