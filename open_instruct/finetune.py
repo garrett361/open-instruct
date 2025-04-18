@@ -322,7 +322,7 @@ class FlatArguments:
         },
     )
     keep_last_n_checkpoints: int = field(
-        default=3,
+        default=-1,
         metadata={"help": "How many checkpoints to keep in the output directory. -1 for all."},
     )
     clean_checkpoints_at_end: bool = field(
