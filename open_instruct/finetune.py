@@ -1002,9 +1002,10 @@ def main(args: FlatArguments):
                 if args.logging_steps and completed_steps % args.logging_steps == 0:
                     avg_loss = (
                         accelerator.gather(total_loss).mean().item()
-                        / args.gradient_accumulation_steps
                         / args.logging_steps
                     )
+                    if args.reduce_loss == "mean":
+                        avg_loss /= args.gradient_accumulation_steps
                     total_tokens = accelerator.gather(local_total_tokens).sum().item()
                     total_tokens_including_padding = accelerator.gather(total_token_including_padding).sum().item()
                     avg_tokens_per_batch = (
