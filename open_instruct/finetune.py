@@ -22,12 +22,10 @@ import random
 import shutil
 import subprocess
 import time
-import warnings
 from dataclasses import dataclass, field
 from datetime import timedelta
 from functools import partial
 from typing import List, Optional, Union
-
 
 import datasets
 import deepspeed
@@ -38,6 +36,7 @@ from accelerate.logging import get_logger
 from accelerate.utils import InitProcessGroupKwargs, set_seed
 from datasets import load_dataset
 from huggingface_hub import HfApi
+from padding_free_collator import TensorDataCollatorWithFlattening
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -69,7 +68,6 @@ from open_instruct.utils import (
     maybe_use_ai2_wandb_entity,
     upload_metadata_to_hf,
 )
-from padding_free_collator import TensorDataCollatorWithFlattening
 
 logger = get_logger(__name__)
 
@@ -93,14 +91,22 @@ class FlatArguments:
         },
     )
     config_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+        default=None,
+        metadata={
+            "help": "Pretrained config name or path if not the same as model_name"
+        },
     )
     tokenizer_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+        default=None,
+        metadata={
+            "help": "Pretrained tokenizer name or path if not the same as model_name"
+        },
     )
     tokenizer_revision: Optional[str] = field(
         default=None,
-        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+        metadata={
+            "help": "The specific model version to use (can be a branch name, tag name or commit id)."
+        },
     )
     chat_template_name: str = field(
         default="tulu",
@@ -118,11 +124,15 @@ class FlatArguments:
     )
     use_slow_tokenizer: bool = field(
         default=True,
-        metadata={"help": "Whether to use one of the slow tokenizer or not (which is then fast tokenizer)."},
+        metadata={
+            "help": "Whether to use one of the slow tokenizer or not (which is then fast tokenizer)."
+        },
     )
     model_revision: Optional[str] = field(
         default=None,
-        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+        metadata={
+            "help": "The specific model version to use (can be a branch name, tag name or commit id)."
+        },
     )
     trust_remote_code: bool = field(
         default=False,
@@ -145,22 +155,30 @@ class FlatArguments:
         },
     )
     dataset_name: Optional[str] = field(
-        default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
+        default=None,
+        metadata={"help": "The name of the dataset to use (via the datasets library)."},
     )
     dataset_mixer: Optional[dict] = field(
-        default=None, metadata={"help": "A dictionary of datasets (local or HF) to sample from."}
+        default=None,
+        metadata={"help": "A dictionary of datasets (local or HF) to sample from."},
     )
     dataset_mixer_list: Optional[list[str]] = field(
-        default=None, metadata={"help": "A list of datasets (local or HF) to sample from."}
+        default=None,
+        metadata={"help": "A list of datasets (local or HF) to sample from."},
     )
     dataset_mix_dir: Optional[str] = field(
-        default=None, metadata={"help": "The directory to save the mixed dataset to disk."}
+        default=None,
+        metadata={"help": "The directory to save the mixed dataset to disk."},
     )
     dataset_config_name: Optional[str] = field(
-        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
+        default=None,
+        metadata={
+            "help": "The configuration name of the dataset to use (via the datasets library)."
+        },
     )
     train_file: Optional[str] = field(
-        default=None, metadata={"help": "The input training data file (a json/jsonl file)."}
+        default=None,
+        metadata={"help": "The input training data file (a json/jsonl file)."},
     )
     max_train_samples: Optional[int] = field(
         default=None,
@@ -185,7 +203,8 @@ class FlatArguments:
         },
     )
     overwrite_cache: bool = field(
-        default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
+        default=False,
+        metadata={"help": "Overwrite the cached training and evaluation sets"},
     )
     add_bos: bool = field(
         default=False,
@@ -196,11 +215,15 @@ class FlatArguments:
     )
     clip_grad_norm: float = field(
         default=-1,
-        metadata={"help": "Clip gradient norm. Not compatible with deepspeed (use deepspeed config instead)."},
+        metadata={
+            "help": "Clip gradient norm. Not compatible with deepspeed (use deepspeed config instead)."
+        },
     )
     gradient_accumulation_steps: int = field(
         default=1,
-        metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."},
+        metadata={
+            "help": "Number of updates steps to accumulate before performing a backward/update pass."
+        },
     )
     learning_rate: float = field(
         default=2e-5,
@@ -208,7 +231,9 @@ class FlatArguments:
     )
     logging_steps: Optional[int] = field(
         default=None,
-        metadata={"help": "Log the training loss and learning rate every logging_steps steps."},
+        metadata={
+            "help": "Log the training loss and learning rate every logging_steps steps."
+        },
     )
     lora_rank: int = field(
         default=64,
@@ -226,7 +251,14 @@ class FlatArguments:
         default="linear",
         metadata={
             "help": "The scheduler type to use for learning rate adjustment.",
-            "choices": ["linear", "cosine", "cosine_with_restarts", "polynomial", "constant", "constant_with_warmup"],
+            "choices": [
+                "linear",
+                "cosine",
+                "cosine_with_restarts",
+                "polynomial",
+                "constant",
+                "constant_with_warmup",
+            ],
         },
     )
     num_train_epochs: int = field(
@@ -235,7 +267,9 @@ class FlatArguments:
     )
     output_dir: str = field(
         default="output/",
-        metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
+        metadata={
+            "help": "The output directory where the model predictions and checkpoints will be written."
+        },
     )
     per_device_train_batch_size: int = field(
         default=8,
@@ -243,15 +277,21 @@ class FlatArguments:
     )
     use_lora: bool = field(
         default=False,
-        metadata={"help": "If True, will use LORA (low-rank parameter-efficient training) to train the model."},
+        metadata={
+            "help": "If True, will use LORA (low-rank parameter-efficient training) to train the model."
+        },
     )
     use_qlora: bool = field(
         default=False,
-        metadata={"help": "Use qLoRA training - initializes model in quantized form. Not compatible with deepspeed."},
+        metadata={
+            "help": "Use qLoRA training - initializes model in quantized form. Not compatible with deepspeed."
+        },
     )
     use_8bit_optimizer: bool = field(
         default=False,
-        metadata={"help": "Use 8bit optimizer from bitsandbytes. Not compatible with deepspeed."},
+        metadata={
+            "help": "Use 8bit optimizer from bitsandbytes. Not compatible with deepspeed."
+        },
     )
     warmup_ratio: float = field(
         default=0.03,
@@ -298,17 +338,26 @@ class FlatArguments:
     )
     save_to_hub: Optional[str] = field(
         default=None,
-        metadata={"help": "Save the model to the Hub under this name. E.g allenai/your-model"},
+        metadata={
+            "help": "Save the model to the Hub under this name. E.g allenai/your-model"
+        },
     )
     gradient_checkpointing: bool = field(
         default=False,
-        metadata={"help": "Turn on gradient checkpointing. Saves memory but slows training."},
+        metadata={
+            "help": "Turn on gradient checkpointing. Saves memory but slows training."
+        },
     )
     max_train_steps: Optional[int] = field(
         default=None,
-        metadata={"help": "If set, overrides the number of training steps. Otherwise, num_train_epochs is used."},
+        metadata={
+            "help": "If set, overrides the number of training steps. Otherwise, num_train_epochs is used."
+        },
     )
-    seed: int = field(default=42, metadata={"help": "Random seed for initialization and dataset shuffling."})
+    seed: int = field(
+        default=42,
+        metadata={"help": "Random seed for initialization and dataset shuffling."},
+    )
     checkpointing_steps: Optional[str] = field(
         default=None,
         metadata={
@@ -323,7 +372,9 @@ class FlatArguments:
     )
     keep_last_n_checkpoints: int = field(
         default=-1,
-        metadata={"help": "How many checkpoints to keep in the output directory. -1 for all."},
+        metadata={
+            "help": "How many checkpoints to keep in the output directory. -1 for all."
+        },
     )
     clean_checkpoints_at_end: bool = field(
         default=False,
@@ -365,7 +416,9 @@ class FlatArguments:
     """What dataset to upload the metadata to. If unset, don't upload metadata"""
     padding_free: bool = field(
         default=False,
-        metadata={"help": "Whether to use padding-free collation via DataCollatorWithFlattening"},
+        metadata={
+            "help": "Whether to use padding-free collation via DataCollatorWithFlattening"
+        },
     )
     project_name: str = field(
         default="open_instruct_internal",
@@ -381,22 +434,35 @@ class FlatArguments:
             and self.dataset_mixer is None
             and self.dataset_mixer_list is None
         ):
-            raise ValueError("Need either a dataset name, dataset mixer, or a training file.")
+            raise ValueError(
+                "Need either a dataset name, dataset mixer, or a training file."
+            )
         else:
             if self.train_file is not None:
                 extension = self.train_file.split(".")[-1]
-                assert extension in ["json", "jsonl"], "`train_file` should be a json or a jsonl file."
+                assert extension in ["json", "jsonl"], (
+                    "`train_file` should be a json or a jsonl file."
+                )
         if (
-            (self.dataset_name is not None and (self.dataset_mixer is not None or self.dataset_mixer_list is not None))
+            (
+                self.dataset_name is not None
+                and (
+                    self.dataset_mixer is not None
+                    or self.dataset_mixer_list is not None
+                )
+            )
             or (self.dataset_name is not None and self.train_file is not None)
             or (
-                (self.dataset_mixer is not None or self.dataset_mixer_list is not None) and self.train_file is not None
+                (self.dataset_mixer is not None or self.dataset_mixer_list is not None)
+                and self.train_file is not None
             )
             or (self.dataset_mixer is not None and self.dataset_mixer_list is not None)
         ):
             raise ValueError("Cannot provide two dataset selection mechanisms.")
         if self.try_launch_beaker_eval_jobs and not self.push_to_hub:
-            raise ValueError("Cannot launch Beaker evaluation jobs without pushing to the Hub.")
+            raise ValueError(
+                "Cannot launch Beaker evaluation jobs without pushing to the Hub."
+            )
 
 
 def encode_sft_example(example, tokenizer, max_seq_length):
@@ -426,7 +492,9 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                 message_start_idx = 0
             else:
                 message_start_idx = tokenizer.apply_chat_template(
-                    conversation=messages[:message_idx],  # here marks the end of the previous messages
+                    conversation=messages[
+                        :message_idx
+                    ],  # here marks the end of the previous messages
                     tokenize=True,
                     return_tensors="pt",
                     padding=False,
@@ -435,7 +503,10 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                     add_generation_prompt=False,
                 ).shape[1]
             # next, we calculate the end index of this non-assistant message
-            if message_idx < len(messages) - 1 and messages[message_idx + 1]["role"] == "assistant":
+            if (
+                message_idx < len(messages) - 1
+                and messages[message_idx + 1]["role"] == "assistant"
+            ):
                 # for intermediate messages that follow with an assistant message, we need to
                 # set `add_generation_prompt=True` to avoid the assistant generation prefix being included in the loss
                 # (e.g., `<|assistant|>`)
@@ -471,13 +542,14 @@ def encode_sft_example(example, tokenizer, max_seq_length):
         "attention_mask": attention_mask.flatten(),
     }
 
+
 def main(args: FlatArguments):
     # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
     # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
     # in the environment
 
     # Truncate to 64 chars. Required for wandb.
-    args.run_name=args.exp_name[:64]
+    args.run_name = args.exp_name[:64]
 
     if args.push_to_hub:
         if args.hf_repo_id is None:  # auto-generate one
@@ -489,7 +561,9 @@ def main(args: FlatArguments):
         args.hf_repo_id = f"{args.hf_entity}/{args.hf_repo_id}"
         if args.hf_repo_revision is None:
             args.hf_repo_revision = args.run_name
-        args.hf_repo_url = f"https://huggingface.co/{args.hf_repo_id}/tree/{args.hf_repo_revision}"
+        args.hf_repo_url = (
+            f"https://huggingface.co/{args.hf_repo_id}/tree/{args.hf_repo_revision}"
+        )
 
     if is_beaker_job():
         beaker_config = maybe_get_beaker_config()
@@ -588,7 +662,11 @@ def main(args: FlatArguments):
             "You are instantiating a new config instance from scratch. This is not supported by this script."
         )
 
-    tokenizer_revision = args.model_revision if args.tokenizer_revision is None else args.tokenizer_revision
+    tokenizer_revision = (
+        args.model_revision
+        if args.tokenizer_revision is None
+        else args.tokenizer_revision
+    )
     if tokenizer_revision != args.model_revision:
         # Warn user if tokenizer and model use different revisions; this is an unusual
         # use case.
@@ -635,7 +713,9 @@ def main(args: FlatArguments):
                 quantization_config=bnb_config,
                 device_map=device_map,
                 torch_dtype=torch.bfloat16,
-                attn_implementation="flash_attention_2" if args.use_flash_attn else "eager",
+                attn_implementation="flash_attention_2"
+                if args.use_flash_attn
+                else "eager",
             )
         else:
             model = AutoModelForCausalLM.from_pretrained(
@@ -646,7 +726,9 @@ def main(args: FlatArguments):
                 trust_remote_code=args.trust_remote_code,
                 low_cpu_mem_usage=args.low_cpu_mem_usage,
                 torch_dtype=torch.bfloat16,
-                attn_implementation="flash_attention_2" if args.use_flash_attn else "eager",
+                attn_implementation="flash_attention_2"
+                if args.use_flash_attn
+                else "eager",
             )
     else:
         logger.info("Training new model from scratch")
@@ -654,7 +736,9 @@ def main(args: FlatArguments):
 
     # no default pad token for llama!
     # here we add all special tokens again, because the default ones are not in the special_tokens_map
-    if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, LlamaTokenizerFast):
+    if isinstance(tokenizer, LlamaTokenizer) or isinstance(
+        tokenizer, LlamaTokenizerFast
+    ):
         num_added_tokens = tokenizer.add_special_tokens(
             {
                 "bos_token": "<s>",
@@ -666,14 +750,16 @@ def main(args: FlatArguments):
         assert num_added_tokens in [
             0,
             1,
-        ], "LlamaTokenizer should only add one special token - the pad_token, or no tokens if pad token present."
+        ], (
+            "LlamaTokenizer should only add one special token - the pad_token, or no tokens if pad token present."
+        )
     elif isinstance(tokenizer, GPTNeoXTokenizerFast):
         # OLMo newer models use this tokenizer
         if tokenizer.bos_token is None:
             tokenizer.bos_token = tokenizer.eos_token
-            assert (
-                args.add_bos
-            ), "For OLMo with GPTNeoX, you must add bos token to the beginning of the input sequence."
+            assert args.add_bos, (
+                "For OLMo with GPTNeoX, you must add bos token to the beginning of the input sequence."
+            )
         # else, pythia / other models
         else:
             num_added_tokens = tokenizer.add_special_tokens(
@@ -681,12 +767,19 @@ def main(args: FlatArguments):
                     "pad_token": "<pad>",
                 }
             )
-            assert num_added_tokens == 1, "GPTNeoXTokenizer should only add one special token - the pad_token."
+            assert num_added_tokens == 1, (
+                "GPTNeoXTokenizer should only add one special token - the pad_token."
+            )
     elif isinstance(tokenizer, GPT2Tokenizer) and isinstance(model, OPTForCausalLM):
         num_added_tokens = tokenizer.add_special_tokens({"unk_token": "<unk>"})
-    elif isinstance(tokenizer, transformers.PreTrainedTokenizerFast) and tokenizer.pad_token is None:
+    elif (
+        isinstance(tokenizer, transformers.PreTrainedTokenizerFast)
+        and tokenizer.pad_token is None
+    ):
         num_added_tokens = tokenizer.add_special_tokens({"pad_token": "<pad>"})
-        assert num_added_tokens == 1, "We detected no padding token but add_special_tokens did not add one."
+        assert num_added_tokens == 1, (
+            "We detected no padding token but add_special_tokens did not add one."
+        )
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
@@ -710,13 +803,18 @@ def main(args: FlatArguments):
         tokenizer.chat_template = CHAT_TEMPLATES[args.chat_template_name]
     else:
         try:
-            tokenizer.chat_template = AutoTokenizer.from_pretrained(args.chat_template_name).chat_template
+            tokenizer.chat_template = AutoTokenizer.from_pretrained(
+                args.chat_template_name
+            ).chat_template
         except Exception:
-            raise ValueError(f"Could not find chat template for {args.chat_template_name}.")
+            raise ValueError(
+                f"Could not find chat template for {args.chat_template_name}."
+            )
 
     if args.add_bos:
         if tokenizer.chat_template.startswith("{{ bos_token }}") or (
-            tokenizer.bos_token is not None and tokenizer.chat_template.startswith(tokenizer.bos_token)
+            tokenizer.bos_token is not None
+            and tokenizer.chat_template.startswith(tokenizer.bos_token)
         ):
             raise ValueError(
                 "You specified add_bos=True, but the chat template already has a bos_token at the beginning."
@@ -726,7 +824,9 @@ def main(args: FlatArguments):
 
     if args.use_lora:
         if args.use_qlora:
-            model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=args.gradient_checkpointing)
+            model = prepare_model_for_kbit_training(
+                model, use_gradient_checkpointing=args.gradient_checkpointing
+            )
 
         logger.info("Initializing LORA model...")
         peft_config = LoraConfig(
@@ -735,7 +835,15 @@ def main(args: FlatArguments):
             r=args.lora_rank,
             lora_alpha=args.lora_alpha,
             lora_dropout=args.lora_dropout,
-            target_modules=["q_proj", "o_proj", "v_proj", "k_proj", "gate_proj", "up_proj", "down_proj"],
+            target_modules=[
+                "q_proj",
+                "o_proj",
+                "v_proj",
+                "k_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
         )
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
@@ -746,22 +854,32 @@ def main(args: FlatArguments):
     # debugging tool for fewer samples
     if args.max_train_samples is not None:
         max_train_samples = min(len(train_dataset), args.max_train_samples)
-        logger.info(f"Limiting training samples to {max_train_samples} from {len(train_dataset)}.")
+        logger.info(
+            f"Limiting training samples to {max_train_samples} from {len(train_dataset)}."
+        )
         train_dataset = train_dataset.select(range(max_train_samples))
 
     with accelerator.main_process_first():
         train_dataset = train_dataset.map(
-            partial(encode_sft_example, tokenizer=tokenizer, max_seq_length=args.max_seq_length),
+            partial(
+                encode_sft_example,
+                tokenizer=tokenizer,
+                max_seq_length=args.max_seq_length,
+            ),
             batched=False,
             num_proc=args.preprocessing_num_workers,
             load_from_cache_file=not args.overwrite_cache,
             remove_columns=[
-                name for name in train_dataset.column_names if name not in ["input_ids", "labels", "attention_mask"]
+                name
+                for name in train_dataset.column_names
+                if name not in ["input_ids", "labels", "attention_mask"]
             ],
             desc="Tokenizing and reformatting instruction data",
         )
         train_dataset.set_format(type="pt")
-        train_dataset = train_dataset.filter(lambda example: (example["labels"] != -100).any())
+        train_dataset = train_dataset.filter(
+            lambda example: (example["labels"] != -100).any()
+        )
 
     # Log a few random samples from the training set:
     for index in random.sample(range(len(train_dataset)), 3):
@@ -770,9 +888,11 @@ def main(args: FlatArguments):
     # DataLoaders creation:
     if args.padding_free:
         accelerator.print("Using padding-free collation")
-        collate_fn=TensorDataCollatorWithFlattening()
+        collate_fn = TensorDataCollatorWithFlattening()
     else:
-        collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest")
+        collate_fn = DataCollatorForSeq2Seq(
+            tokenizer=tokenizer, model=model, padding="longest"
+        )
 
     accelerator.print("Creating dataloader")
     train_dataloader = DataLoader(
@@ -787,11 +907,19 @@ def main(args: FlatArguments):
     no_decay = ["bias", "layer_norm.weight"]
     optimizer_grouped_parameters = [
         {
-            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if not any(nd in n for nd in no_decay)
+            ],
             "weight_decay": args.weight_decay,
         },
         {
-            "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if any(nd in n for nd in no_decay)
+            ],
             "weight_decay": 0.0,
         },
     ]
@@ -807,11 +935,17 @@ def main(args: FlatArguments):
             is_paged=True,
         )
     else:
-        optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate, fused=args.fused_optimizer)
+        optimizer = torch.optim.AdamW(
+            optimizer_grouped_parameters,
+            lr=args.learning_rate,
+            fused=args.fused_optimizer,
+        )
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    num_update_steps_per_epoch = math.ceil(
+        len(train_dataloader) / args.gradient_accumulation_steps
+    )
     if args.max_train_steps is None:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
         overrode_max_train_steps = True
@@ -829,7 +963,9 @@ def main(args: FlatArguments):
     # num_training_steps by num_processes so that the total number of
     # updates matches the num_training_steps.
     num_training_steps_for_scheduler = (
-        args.max_train_steps if overrode_max_train_steps else args.max_train_steps * accelerator.num_processes
+        args.max_train_steps
+        if overrode_max_train_steps
+        else args.max_train_steps * accelerator.num_processes
     )
     lr_scheduler = get_scheduler(
         name=args.lr_scheduler_type,
@@ -849,7 +985,9 @@ def main(args: FlatArguments):
         print(f"{args=}")
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    num_update_steps_per_epoch = math.ceil(
+        len(train_dataloader) / args.gradient_accumulation_steps
+    )
     if overrode_max_train_steps:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
     # Afterwards we recalculate our number of training epochs
@@ -886,17 +1024,27 @@ def main(args: FlatArguments):
         wandb_tracker = accelerator.get_tracker("wandb")
 
     # Train!
-    total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
+    total_batch_size = (
+        args.per_device_train_batch_size
+        * accelerator.num_processes
+        * args.gradient_accumulation_steps
+    )
 
     logger.info("***** Running training *****")
     logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {args.num_train_epochs}")
-    logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
-    logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
+    logger.info(
+        f"  Instantaneous batch size per device = {args.per_device_train_batch_size}"
+    )
+    logger.info(
+        f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}"
+    )
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
     # Only show the progress bar once on each machine.
-    progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
+    progress_bar = tqdm(
+        range(args.max_train_steps), disable=not accelerator.is_local_main_process
+    )
     completed_steps = 0
     starting_epoch = 0
 
@@ -915,7 +1063,10 @@ def main(args: FlatArguments):
             completed_steps = starting_epoch * num_update_steps_per_epoch
         else:
             # need to multiply `gradient_accumulation_steps` to reflect real steps
-            resume_step = int(training_difference.replace("step_", "")) * args.gradient_accumulation_steps
+            resume_step = (
+                int(training_difference.replace("step_", ""))
+                * args.gradient_accumulation_steps
+            )
             starting_epoch = resume_step // len(train_dataloader)
             completed_steps = resume_step // args.gradient_accumulation_steps
             resume_step -= starting_epoch * len(train_dataloader)
@@ -925,7 +1076,9 @@ def main(args: FlatArguments):
     progress_bar.update(completed_steps)
 
     local_total_tokens = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
-    total_token_including_padding = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
+    total_token_including_padding = torch.tensor(
+        0, dtype=torch.int64, device=accelerator.device
+    )
     start_time = time.time()
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
@@ -934,7 +1087,9 @@ def main(args: FlatArguments):
         total_aux_loss = 0
         if last_checkpoint_path and resume_step is not None:
             # We skip the first `n` batches in the dataloader when resuming from a checkpoint
-            active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
+            active_dataloader = accelerator.skip_first_batches(
+                train_dataloader, resume_step
+            )
         else:
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
@@ -1004,10 +1159,25 @@ def main(args: FlatArguments):
                         accelerator.gather(total_loss).mean().item()
                         / args.logging_steps
                     )
+                    # NOTE: @goon - when using `mean` grad loss we average over all tokens and want
+                    # to divide by the accumulation steps. With `sum`, we're summing all tokens.
+                    # The summed-loss per step scales with the global batch size, whereas the mean
+                    # does not, which makes it more annoying to compare results across runs with
+                    # different global bsz in the former case. For this reason, we will report the
+                    # average summed loss per batch when reduce_loss="sum"
                     if args.reduce_loss == "mean":
                         avg_loss /= args.gradient_accumulation_steps
+                    else:
+                        # No division by n_procs is needed because we already took the `mean` of the
+                        # gather above.
+                        avg_loss /= (
+                            args.gradient_accumulation_steps
+                            * args.per_device_train_batch_size
+                        )
                     total_tokens = accelerator.gather(local_total_tokens).sum().item()
-                    total_tokens_including_padding = accelerator.gather(total_token_including_padding).sum().item()
+                    total_tokens_including_padding = (
+                        accelerator.gather(total_token_including_padding).sum().item()
+                    )
                     avg_tokens_per_batch = (
                         total_tokens
                         / accelerator.num_processes
@@ -1028,7 +1198,9 @@ def main(args: FlatArguments):
                         "total_tokens": total_tokens,
                         "avg_tokens_per_batch": avg_tokens_per_batch,
                         "avg_tokens_per_batch_including_padding": avg_tokens_per_batch_including_padding,
-                        "per_device_tps": total_tokens / accelerator.num_processes / (time.time() - start_time),
+                        "per_device_tps": total_tokens
+                        / accelerator.num_processes
+                        / (time.time() - start_time),
                         "total_tokens_including_padding": total_tokens_including_padding,
                         "per_device_tps_including_padding": total_tokens_including_padding
                         / accelerator.num_processes
@@ -1081,11 +1253,19 @@ def main(args: FlatArguments):
                         accelerator.save_state(output_dir)
                         # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
                         with open(
-                            os.path.join(get_last_checkpoint_path(args, incomplete=True), "COMPLETED"), "w"
+                            os.path.join(
+                                get_last_checkpoint_path(args, incomplete=True),
+                                "COMPLETED",
+                            ),
+                            "w",
                         ) as f:
-                            f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
+                            f.write(
+                                "COMPLETED"
+                            )  # annoyingly, empty files arent uploaded by beaker.
                         if accelerator.is_local_main_process:
-                            clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
+                            clean_last_n_checkpoints(
+                                args.output_dir, args.keep_last_n_checkpoints
+                            )
                         accelerator.wait_for_everyone()
                 if completed_steps >= args.max_train_steps:
                     break
@@ -1096,8 +1276,15 @@ def main(args: FlatArguments):
                 output_dir = os.path.join(args.output_dir, output_dir)
             accelerator.save_state(output_dir)
             # use this to mark the checkpoint as completely saved, to avoid restoring from garbled checkpoints
-            with open(os.path.join(get_last_checkpoint_path(args, incomplete=True), "COMPLETED"), "w") as f:
-                f.write("COMPLETED")  # annoyingly, empty files arent uploaded by beaker.
+            with open(
+                os.path.join(
+                    get_last_checkpoint_path(args, incomplete=True), "COMPLETED"
+                ),
+                "w",
+            ) as f:
+                f.write(
+                    "COMPLETED"
+                )  # annoyingly, empty files arent uploaded by beaker.
             if accelerator.is_local_main_process:
                 clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
             accelerator.wait_for_everyone()
@@ -1173,11 +1360,19 @@ def main(args: FlatArguments):
                 --model_name {args.run_name} \
                 --run_id {wandb_tracker.run.get_url()}
             """
-            process = subprocess.Popen(["bash", "-c", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process = subprocess.Popen(
+                ["bash", "-c", command], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
             stdout, stderr = process.communicate()
-            print(f"Submit jobs after model training is finished - Stdout:\n{stdout.decode()}")
-            print(f"Submit jobs after model training is finished - Stderr:\n{stderr.decode()}")
-            print(f"Submit jobs after model training is finished - process return code: {process.returncode}")
+            print(
+                f"Submit jobs after model training is finished - Stdout:\n{stdout.decode()}"
+            )
+            print(
+                f"Submit jobs after model training is finished - Stderr:\n{stderr.decode()}"
+            )
+            print(
+                f"Submit jobs after model training is finished - process return code: {process.returncode}"
+            )
 
     if args.push_to_hub:
         push_folder_to_hub(
