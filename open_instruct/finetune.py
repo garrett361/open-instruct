@@ -1001,14 +1001,12 @@ def main(args: FlatArguments):
                 progress_bar.update(1)
                 completed_steps += 1
                 if args.logging_steps and completed_steps % args.logging_steps == 0:
-                    print(f"[rank={accelerator.process_index}, {step=}]: Pre-gather {total_loss=}")
                     avg_loss = (
                         accelerator.gather(total_loss).mean().item()
                         / args.logging_steps
                     )
                     if args.reduce_loss == "mean":
                         avg_loss /= args.gradient_accumulation_steps
-                    print(f"[rank={accelerator.process_index}, {step=}]: Pre-gather {avg_loss=}")
                     total_tokens = accelerator.gather(local_total_tokens).sum().item()
                     total_tokens_including_padding = accelerator.gather(total_token_including_padding).sum().item()
                     avg_tokens_per_batch = (
