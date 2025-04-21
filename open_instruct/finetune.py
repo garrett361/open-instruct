@@ -984,7 +984,9 @@ def main(args: FlatArguments):
                         aux_loss = args.load_balancing_weight * outputs.aux_loss
                         loss += aux_loss
                 # We keep track of the loss at each logged step
-                total_loss += loss.detach().float()
+                curr_loss = loss.detach().float()
+                total_loss += curr_loss
+                print(f"[rank={accelerator.process_index}, {step=}]: {curr_loss=}, {total_loss=}")
                 accelerator.backward(loss)
                 if args.load_balancing_loss:
                     total_aux_loss += aux_loss.detach().float()
