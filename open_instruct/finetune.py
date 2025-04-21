@@ -986,7 +986,6 @@ def main(args: FlatArguments):
                 # We keep track of the loss at each logged step
                 curr_loss = loss.detach().float()
                 total_loss += curr_loss
-                print(f"[rank={accelerator.process_index}, {step=}]: {curr_loss=}, {total_loss=}")
                 accelerator.backward(loss)
                 if args.load_balancing_loss:
                     total_aux_loss += aux_loss.detach().float()
@@ -1002,11 +1001,13 @@ def main(args: FlatArguments):
                 progress_bar.update(1)
                 completed_steps += 1
                 if args.logging_steps and completed_steps % args.logging_steps == 0:
+                    print(f"[rank={accelerator.process_index}, {step=}]: Pre-gather {total_loss=}")
                     avg_loss = (
                         accelerator.gather(total_loss).mean().item()
                         / args.gradient_accumulation_steps
                         / args.logging_steps
                     )
+                    print(f"[rank={accelerator.process_index}, {step=}]: Pre-gather {avg_loss=}")
                     total_tokens = accelerator.gather(local_total_tokens).sum().item()
                     total_tokens_including_padding = accelerator.gather(total_token_including_padding).sum().item()
                     avg_tokens_per_batch = (
