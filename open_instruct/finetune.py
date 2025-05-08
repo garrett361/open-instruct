@@ -859,7 +859,7 @@ def main(args: FlatArguments):
         )
         train_dataset = train_dataset.select(range(max_train_samples))
 
-    with accelerator.main_process_first():
+    with accelerator.local_main_process_first():
         train_dataset = train_dataset.map(
             partial(
                 encode_sft_example,
