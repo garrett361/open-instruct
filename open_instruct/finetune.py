@@ -585,9 +585,9 @@ def main(args: FlatArguments):
         **accelerator_log_kwargs,
         kwargs_handlers=[timeout_kwargs],
         gradient_accumulation_plugin=GradientAccumulationPlugin(
-                num_steps=args.gradient_accumulation_steps,
-                sync_each_batch=True,
-            )
+            num_steps=args.gradient_accumulation_steps,
+            sync_each_batch=True,
+        ),
     )
     # Make one log on every process with the configuration for debugging.
     logging.basicConfig(
@@ -1145,7 +1145,13 @@ def main(args: FlatArguments):
                         loss += aux_loss
                 # We keep track of the loss at each logged step
                 total_loss += loss.detach().float()
-                accelerator.backward(loss)
+                # accelerator.backward internally divides by `gradient_accumulation_steps`, which is
+                # only the right thing to do for `mean` losses
+                accelerator.backward(
+                    loss
+                    if args.reduce_loss == "mean"
+                    else loss * args.gradient_accumulation_steps
+                )
                 if args.load_balancing_loss:
                     total_aux_loss += aux_loss.detach().float()
                 # clip gradient norm. don't do this with deepspeed
