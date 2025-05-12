@@ -1146,7 +1146,9 @@ def main(args: FlatArguments):
                 # We keep track of the loss at each logged step
                 total_loss += loss.detach().float()
                 # accelerator.backward internally divides by `gradient_accumulation_steps`, which is
-                # only the right thing to do for `mean` losses
+                # only the right thing to do for `mean` losses. Additionally, FSDP performs a MEAN
+                # reduction over data-parallel ranks by default, which is again not desired for `sum`
+                # loss.
                 accelerator.backward(
                     loss
                     if args.reduce_loss == "mean"
@@ -1170,10 +1172,10 @@ def main(args: FlatArguments):
                         accelerator.gather(total_loss).mean().item()
                         / args.logging_steps
                     )
-                    # NOTE: @goon - when using `mean` grad loss we average over all tokens and want
-                    # to divide by the accumulation steps. With `sum`, we're summing all tokens.
-                    # The summed-loss per step scales with the global batch size, whereas the mean
-                    # does not, which makes it more annoying to compare results across runs with
+                    # NOTE: @goon - when using `mean` loss we average over all tokens and want to
+                    # divide by the accumulation steps. With `sum`, we're summing all tokens. The
+                    # summed-loss per step scales with the global batch size, whereas the mean does
+                    # not, which makes it more annoying to compare results across runs with
                     # different global bsz in the former case. For this reason, we will report the
                     # average summed loss per batch when reduce_loss="sum"
                     if args.reduce_loss == "mean":
