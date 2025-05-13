@@ -424,6 +424,8 @@ class FlatArguments:
         default="open_instruct_internal",
         metadata={"help": "Project name, e.g for wandb tracking. "},
     )
+    skip_final_ckpt: bool = False
+    """Skip the final ckpt with accelerate. Intended for testing."""
 
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:
@@ -1302,7 +1304,7 @@ def main(args: FlatArguments):
                 clean_last_n_checkpoints(args.output_dir, args.keep_last_n_checkpoints)
             accelerator.wait_for_everyone()
 
-    if args.output_dir is not None:
+    if args.output_dir is not None and not args.skip_final_ckpt:
         save_with_accelerate(
             accelerator,
             model,
