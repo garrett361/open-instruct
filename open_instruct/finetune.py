@@ -1078,7 +1078,12 @@ def main(args: FlatArguments):
             completed_steps = resume_step // args.gradient_accumulation_steps
             resume_step -= starting_epoch * len(train_dataloader)
 
-    print(f"Starting from epoch {starting_epoch} and step {completed_steps}.")
+    else:
+        resume_step = None
+
+    print(
+        f"Starting from epoch {starting_epoch} and step {completed_steps} with {resume_step=}."
+    )
     # update the progress_bar if load from checkpoint
     progress_bar.update(completed_steps)
 
@@ -1094,6 +1099,7 @@ def main(args: FlatArguments):
         total_aux_loss = 0
         if last_checkpoint_path and resume_step is not None:
             # We skip the first `n` batches in the dataloader when resuming from a checkpoint
+            print(f"Skipping first {resume_step=} batches.")
             active_dataloader = accelerator.skip_first_batches(
                 train_dataloader, resume_step
             )
@@ -1283,6 +1289,9 @@ def main(args: FlatArguments):
                             )
                         accelerator.wait_for_everyone()
                 if completed_steps >= args.max_train_steps:
+                    print(
+                        f"Stopping training: {completed_steps=} larger than {args.max_train_steps=}"
+                    )
                     break
 
         if checkpointing_steps == "epoch":
