@@ -1065,7 +1065,7 @@ def main(args: FlatArguments):
 
         if "epoch" in training_difference:
             starting_epoch = int(training_difference.replace("epoch_", "")) + 1
-            resume_step = None
+            resume_step = 0
             completed_steps = starting_epoch * num_update_steps_per_epoch
         else:
             # need to multiply `gradient_accumulation_steps` to reflect real steps
@@ -1078,7 +1078,7 @@ def main(args: FlatArguments):
             resume_step -= starting_epoch * len(train_dataloader)
 
     else:
-        resume_step = None
+        resume_step = 0
 
     accelerator.print(
         f"Starting from epoch {starting_epoch} and step {completed_steps} with {resume_step=}."
@@ -1096,7 +1096,7 @@ def main(args: FlatArguments):
         train_dataloader.set_epoch(epoch)
         total_loss = 0
         total_aux_loss = 0
-        if last_checkpoint_path and resume_step is not None:
+        if last_checkpoint_path and resume_step:
             # We skip the first `n` batches in the dataloader when resuming from a checkpoint
             accelerator.print(f"Skipping first {resume_step=} batches.")
             active_dataloader = accelerator.skip_first_batches(
@@ -1235,7 +1235,9 @@ def main(args: FlatArguments):
                         / 2**30,
                     }
 
-                    sec_per_step = (time.time() - start_time) / completed_steps
+                    sec_per_step = (time.time() - start_time) / (
+                        completed_steps - resume_step
+                    )
                     steps_remaining = args.max_train_steps - completed_steps
                     secs_remaining = steps_remaining * sec_per_step
                     accelerator.print(
