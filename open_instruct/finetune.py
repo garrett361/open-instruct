@@ -986,10 +986,9 @@ def main(args: FlatArguments):
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )
-    if accelerator.process_index == 0:
-        print(f"{model=}")
-        print(f"{accelerator.state.fsdp_plugin=}")
-        print(f"{args=}")
+    accelerator.print(f"{model=}")
+    accelerator.print(f"{accelerator.state.fsdp_plugin=}")
+    accelerator.print(f"{args=}")
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(
@@ -1081,7 +1080,7 @@ def main(args: FlatArguments):
     else:
         resume_step = None
 
-    print(
+    accelerator.print(
         f"Starting from epoch {starting_epoch} and step {completed_steps} with {resume_step=}."
     )
     # update the progress_bar if load from checkpoint
@@ -1099,7 +1098,7 @@ def main(args: FlatArguments):
         total_aux_loss = 0
         if last_checkpoint_path and resume_step is not None:
             # We skip the first `n` batches in the dataloader when resuming from a checkpoint
-            print(f"Skipping first {resume_step=} batches.")
+            accelerator.print(f"Skipping first {resume_step=} batches.")
             active_dataloader = accelerator.skip_first_batches(
                 train_dataloader, resume_step
             )
@@ -1240,7 +1239,7 @@ def main(args: FlatArguments):
                     steps_remaining = args.max_train_steps - completed_steps
                     secs_remaining = steps_remaining * sec_per_step
                     accelerator.print(
-                        f"Approx. time remaining: {timedelta(seconds=secs_remaining)}"
+                        f"Approx. time remaining: {timedelta(seconds=secs_remaining)}. {args.max_train_steps=}, {completed_steps=}, {steps_remaining=}"
                     )
 
                     if args.load_balancing_loss:
@@ -1289,7 +1288,7 @@ def main(args: FlatArguments):
                             )
                         accelerator.wait_for_everyone()
                 if completed_steps >= args.max_train_steps:
-                    print(
+                    accelerator.print(
                         f"Stopping training: {completed_steps=} larger than {args.max_train_steps=}"
                     )
                     break
