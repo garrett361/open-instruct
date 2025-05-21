@@ -1091,17 +1091,20 @@ def main(args: FlatArguments):
         0, dtype=torch.int64, device=accelerator.device
     )
     start_time = time.time()
+    skipped_batches = False
     for epoch in range(starting_epoch, args.num_train_epochs):
+        accelerator.print(f"Start of {epoch=}")
         model.train()
         train_dataloader.set_epoch(epoch)
         total_loss = 0
         total_aux_loss = 0
-        if last_checkpoint_path and resume_step:
+        if last_checkpoint_path and resume_step and not skipped_batches:
             # We skip the first `n` batches in the dataloader when resuming from a checkpoint
             accelerator.print(f"Skipping first {resume_step=} batches.")
             active_dataloader = accelerator.skip_first_batches(
                 train_dataloader, resume_step
             )
+            skipped_batches = True
         else:
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
