@@ -16,10 +16,16 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
     """
 
     def __init__(
-        self, *args, return_flash_attn_kwargs=True, separator_id=-100, **kwargs
+        self,
+        *args,
+        return_flash_attn_kwargs=True,
+        return_position_ids=True,
+        separator_id=-100,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.return_flash_attn_kwargs = return_flash_attn_kwargs
+        self.return_position_ids = return_position_ids
         self.separator_id = separator_id
         warnings.warn(
             "Using `DataCollatorWithFlattening` will flatten the entire mini batch into single long sequence."
@@ -37,6 +43,8 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
         if self.return_flash_attn_kwargs:
             cu_seq_lens = [0]
             max_length = 0
+        if self.return_position_ids:
+            pos_ids = []
         is_labels_provided = "labels" in features[0]
         ret = {"input_ids": [], "labels": []}
         separator = torch.tensor(
@@ -56,11 +64,16 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
             if self.return_flash_attn_kwargs:
                 cu_seq_lens.append(cu_seq_lens[-1] + len(input_ids))
                 max_length = max(max_length, len(input_ids))
+            if self.return_position_ids:
+                pos_ids.append(torch.arange(input_ids.numel(), device=input_ids.device))
+
         if self.return_flash_attn_kwargs:
             ret["cu_seq_lens_q"] = ret["cu_seq_lens_k"] = torch.tensor(
                 cu_seq_lens, dtype=torch.int32, device=features[0]["input_ids"].device
             )
             ret["max_length_q"] = ret["max_length_k"] = max_length
+        if self.return_position_ids:
+            ret["position_ids"] = torch.cat(pos_ids, dim=0)[None]
         ret["input_ids"] = torch.cat(ret["input_ids"], dim=0)[None]
         ret["labels"] = torch.cat(ret["labels"], dim=0)[None]
         return ret
