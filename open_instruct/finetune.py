@@ -863,7 +863,7 @@ def main(args: FlatArguments):
 
     if raw_datasets == DUMMY_TRAIN_FILE:
         accelerator.print("Creating DUMMY dataloader")
-        train_dataloader = DummyLoader(args, accelerator)
+        train_dataloader = DummyLoader(args, accelerator, tokenizer)
     else:
         train_dataset = raw_datasets["train"]
         # debugging tool for fewer samples
