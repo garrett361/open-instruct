@@ -913,14 +913,18 @@ def main(args: FlatArguments):
     local_total_tokens = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
     total_token_including_padding = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
     start_time = time.time()
+    skipped_batches = False
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         train_dataloader.set_epoch(epoch)
         total_loss = 0
         total_aux_loss = 0
-        if last_checkpoint_path and resume_step is not None:
+        if last_checkpoint_path and resume_step is not None and not skipped_batches:
             # We skip the first `n` batches in the dataloader when resuming from a checkpoint
-            active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
+            active_dataloader = accelerator.skip_first_batches(
+                train_dataloader, resume_step
+            )
+            skipped_batches = True
         else:
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
