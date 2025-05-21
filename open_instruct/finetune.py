@@ -1315,6 +1315,9 @@ def main(args: FlatArguments):
             accelerator.wait_for_everyone()
 
     if args.output_dir is not None and not args.skip_final_ckpt:
+        accelerator.print(
+            f"Saving final ckpt at {epoch=}, {starting_epoch=}, {len(train_dataloader)=}, {args.num_train_epochs=}, {completed_steps=}, {args.max_train_steps=}, {resume_step=}, {step=}"
+        )
         save_with_accelerate(
             accelerator,
             model,
