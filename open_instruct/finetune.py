@@ -36,7 +36,7 @@ from accelerate.logging import get_logger
 from accelerate.utils import InitProcessGroupKwargs, set_seed
 from datasets import load_dataset
 from huggingface_hub import HfApi
-from padding_free_collator import TensorDataCollatorWithFlattening
+from padding_free_collator import DummyLoader, TensorDataCollatorWithFlattening
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -70,6 +70,7 @@ from open_instruct.utils import (
 )
 
 logger = get_logger(__name__)
+DUMMY_TRAIN_FILE = "dummy"
 
 
 @dataclass
@@ -440,7 +441,7 @@ class FlatArguments:
                 "Need either a dataset name, dataset mixer, or a training file."
             )
         else:
-            if self.train_file is not None:
+            if self.train_file is not None and self.train_file != DUMMY_TRAIN_FILE:
                 extension = self.train_file.split(".")[-1]
                 assert extension in ["json", "jsonl"], (
                     "`train_file` should be a json or a jsonl file."
@@ -644,12 +645,15 @@ def main(args: FlatArguments):
         dataset_args = {}
         if args.train_file is not None:
             data_files["train"] = args.train_file
-        with accelerator.main_process_first():
-            raw_datasets = load_dataset(
-                "json",
-                data_files=data_files,
-                **dataset_args,
-            )
+        if args.train_file != DUMMY_TRAIN_FILE:
+            with accelerator.main_process_first():
+                raw_datasets = load_dataset(
+                    "json",
+                    data_files=data_files,
+                    **dataset_args,
+                )
+        else:
+            raw_datasets = DUMMY_TRAIN_FILE
 
     # Load pretrained model and tokenizer
     if args.config_name:
@@ -857,59 +861,62 @@ def main(args: FlatArguments):
     elif args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
 
-    train_dataset = raw_datasets["train"]
-    # debugging tool for fewer samples
-    if args.max_train_samples is not None:
-        max_train_samples = min(len(train_dataset), args.max_train_samples)
-        logger.info(
-            f"Limiting training samples to {max_train_samples} from {len(train_dataset)}."
-        )
-        train_dataset = train_dataset.select(range(max_train_samples))
-
-    with accelerator.local_main_process_first():
-        train_dataset = train_dataset.map(
-            partial(
-                encode_sft_example,
-                tokenizer=tokenizer,
-                max_seq_length=args.max_seq_length,
-            ),
-            batched=False,
-            num_proc=args.preprocessing_num_workers,
-            load_from_cache_file=not args.overwrite_cache,
-            remove_columns=[
-                name
-                for name in train_dataset.column_names
-                if name not in ["input_ids", "labels", "attention_mask"]
-            ],
-            desc="Tokenizing and reformatting instruction data",
-        )
-        train_dataset.set_format(type="pt")
-        train_dataset = train_dataset.filter(
-            lambda example: (example["labels"] != -100).any()
-        )
-
-    # Log a few random samples from the training set:
-    for index in random.sample(range(len(train_dataset)), 3):
-        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
-
-    # DataLoaders creation:
-    if args.padding_free:
-        accelerator.print("Using padding-free collation")
-        collate_fn = TensorDataCollatorWithFlattening(
-            return_position_ids=True, return_flash_attn_kwargs=True
-        )
+    if raw_datasets == DUMMY_TRAIN_FILE:
+        accelerator.print("Creating DUMMY dataloader")
+        train_dataloader = DummyLoader(args, accelerator)
     else:
-        collate_fn = DataCollatorForSeq2Seq(
-            tokenizer=tokenizer, model=model, padding="longest"
-        )
+        train_dataset = raw_datasets["train"]
+        # debugging tool for fewer samples
+        if args.max_train_samples is not None:
+            max_train_samples = min(len(train_dataset), args.max_train_samples)
+            logger.info(
+                f"Limiting training samples to {max_train_samples} from {len(train_dataset)}."
+            )
+            train_dataset = train_dataset.select(range(max_train_samples))
 
-    accelerator.print("Creating dataloader")
-    train_dataloader = DataLoader(
-        train_dataset,
-        shuffle=True,
-        collate_fn=collate_fn,
-        batch_size=args.per_device_train_batch_size,
-    )
+        with accelerator.local_main_process_first():
+            train_dataset = train_dataset.map(
+                partial(
+                    encode_sft_example,
+                    tokenizer=tokenizer,
+                    max_seq_length=args.max_seq_length,
+                ),
+                batched=False,
+                num_proc=args.preprocessing_num_workers,
+                load_from_cache_file=not args.overwrite_cache,
+                remove_columns=[
+                    name
+                    for name in train_dataset.column_names
+                    if name not in ["input_ids", "labels", "attention_mask"]
+                ],
+                desc="Tokenizing and reformatting instruction data",
+            )
+            train_dataset.set_format(type="pt")
+            train_dataset = train_dataset.filter(
+                lambda example: (example["labels"] != -100).any()
+            )
+
+        # Log a few random samples from the training set:
+        for index in random.sample(range(len(train_dataset)), 3):
+            logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+
+        # DataLoaders creation:
+        if args.padding_free:
+            accelerator.print("Using padding-free collation")
+            collate_fn = TensorDataCollatorWithFlattening()
+        else:
+            collate_fn = DataCollatorForSeq2Seq(
+                tokenizer=tokenizer, model=model, padding="longest"
+            )
+
+        accelerator.print("Creating dataloader")
+
+        train_dataloader = DataLoader(
+            train_dataset,
+            shuffle=True,
+            collate_fn=collate_fn,
+            batch_size=args.per_device_train_batch_size,
+        )
 
     # Optimizer
     # Split weights in two groups, one with weight decay and the other not.
@@ -1039,7 +1046,7 @@ def main(args: FlatArguments):
     )
 
     logger.info("***** Running training *****")
-    logger.info(f"  Num examples = {len(train_dataset)}")
+    logger.info(f"  Num examples = {len(train_dataloader)}")
     logger.info(f"  Num Epochs = {args.num_train_epochs}")
     logger.info(
         f"  Instantaneous batch size per device = {args.per_device_train_batch_size}"

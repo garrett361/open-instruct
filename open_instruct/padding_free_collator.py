@@ -77,3 +77,60 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
         ret["input_ids"] = torch.cat(ret["input_ids"], dim=0)[None]
         ret["labels"] = torch.cat(ret["labels"], dim=0)[None]
         return ret
+
+
+class DummyLoader:
+    def __init__(self, args, accelerator, offset=100) -> None:
+        self.args = args
+        self.accelerator = accelerator
+        self.offset = offset # For avoiding low-numbered special toks
+
+    def __iter__(self):
+        tensors = torch.arange(
+            self.offset,
+            self.args.per_device_train_batch_size * self.args.max_seq_length
+            + self.offset,
+            device=self.accelerator.device,
+        )
+        if self.args.padding_free:
+            tensors = tensors[None]
+            position_ids = torch.cat(
+                [
+                    torch.arange(
+                        self.args.max_seq_length,
+                        device=self.accelerator.device,
+                    )[None]
+                    for n in range(self.args.per_device_train_batch_size)
+                ],
+                dim=-1,
+            )
+            max_seq_length = self.args.max_seq_length
+            cu_seq_lens = torch.tensor(
+                [0, self.args.max_seq_length], device=tensors.device, dtype=torch.int32
+            )
+            batch = {
+                "input_ids": tensors,
+                "labels": tensors,
+                "position_ids": position_ids,
+                "max_length_q": max_seq_length,
+                "max_length_k": max_seq_length,
+                "cu_seq_lens_q": cu_seq_lens,
+                "cu_seq_lens_k": cu_seq_lens,
+            }
+        else:
+            tensors = tensors.reshape(
+                self.args.per_device_train_batch_size, self.args.max_seq_length
+            )
+            batch = {
+                "input_ids": tensors,
+                "labels": tensors,
+                "attention_mask": torch.ones_like(tensors),
+            }
+        while True:
+            yield batch
+
+    def __len__(self):
+        return 1000
+
+    def set_epoch(self, *args, **kwargs):
+        return
