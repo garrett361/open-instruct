@@ -102,25 +102,40 @@ The second general point to be learned from the bitter lesson is that the actual
 
 
 class DummyLoader:
-    def __init__(self, args, accelerator, tokenizer) -> None:
+    def __init__(
+        self,
+        args,
+        accelerator,
+        tokenizer,
+        separator_id=-100,
+    ) -> None:
         self.args = args
         self.accelerator = accelerator
         self.tokenizer = tokenizer
+        self.separator_id = separator_id
 
     def __iter__(self):
         dummy_toks = self.tokenizer.encode(BITTER_LESSON)
+        dummy_toks = dummy_toks
 
         while len(dummy_toks) < self.args.max_seq_length:
             dummy_toks += dummy_toks
-        dummy_toks = (
-            self.args.per_device_train_batch_size
-            * dummy_toks[: self.args.max_seq_length]
-        )
-        input_ids = torch.tensor(
-            dummy_toks, device=self.accelerator.device, dtype=torch.int64
-        )[None]
+        dummy_toks = dummy_toks[: self.args.max_seq_length]
 
         if self.args.padding_free:
+            input_ids = torch.tensor(
+                self.args.per_device_train_batch_size * dummy_toks,
+                device=self.accelerator.device,
+                dtype=torch.int64,
+            )[None]
+
+            dummy_toks_with_sep = dummy_toks.copy()
+            dummy_toks_with_sep[0] = self.separator_id
+            labels = torch.tensor(
+                self.args.per_device_train_batch_size * dummy_toks_with_sep,
+                device=self.accelerator.device,
+                dtype=torch.int64,
+            )[None]
             position_ids = torch.cat(
                 [
                     torch.arange(
@@ -145,7 +160,7 @@ class DummyLoader:
             )
             batch = {
                 "input_ids": input_ids,
-                "labels": input_ids,
+                "labels": labels,
                 "position_ids": position_ids,
                 "max_length_q": self.args.max_seq_length,
                 "max_length_k": self.args.max_seq_length,
@@ -153,15 +168,14 @@ class DummyLoader:
                 "cu_seq_lens_k": cu_seq_lens,
             }
         else:
-            input_ids = input_ids.reshape(
-                self.args.per_device_train_batch_size, self.args.max_seq_length
-            )
-            labels = labels.reshape(
-                self.args.per_device_train_batch_size, self.args.max_seq_length
+            input_ids = torch.tensor(
+                [dummy_toks for _ in range(self.args.per_device_train_batch_size)],
+                device=self.accelerator.device,
+                dtype=torch.int64,
             )
             batch = {
                 "input_ids": input_ids,
-                "labels": labels,
+                "labels": input_ids,
                 "attention_mask": torch.ones_like(input_ids),
             }
         while True:
