@@ -1274,6 +1274,9 @@ def main(args: FlatArguments):
 
                 if isinstance(checkpointing_steps, int):
                     if completed_steps % checkpointing_steps == 0:
+                        accelerator.print(
+                            f"Saving intermediate ckpt at {epoch=}, {starting_epoch=}, {len(train_dataloader)=}, {args.num_train_epochs=}, {completed_steps=}, {args.max_train_steps=}, {resume_step=}, {step=}"
+                        )
                         output_dir = f"step_{completed_steps}"
                         if args.output_dir is not None:
                             output_dir = os.path.join(args.output_dir, output_dir)
