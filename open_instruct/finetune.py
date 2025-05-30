@@ -261,6 +261,12 @@ class FlatArguments:
             ],
         },
     )
+    final_lr_ratio: float = field(
+        default=0.1,
+        metadata={
+            "help": "Set the final lr value at the end of training to be final_lr_ratio * learning_rate."
+        },
+    )
     num_train_epochs: int = field(
         default=2,
         metadata={"help": "Total number of training epochs to perform."},
@@ -976,11 +982,23 @@ def main(args: FlatArguments):
         if overrode_max_train_steps
         else args.max_train_steps * accelerator.num_processes
     )
+    # HACK: @goon - final_lr_ratio assumes a linear scheduler, so putting this assert in to sanity
+    # check.
+    assert args.lr_scheduler_type == "linear"
+    assert 1.0 > args.final_lr_ratio >= 0.0
+
+    # HACK: @goon - adjust num_training_steps_for_scheduler so that the final LR is learning_rate *
+    # final_lr_ratio.
+    num_warmup_steps = int(num_training_steps_for_scheduler * args.warmup_ratio)
+    num_training_steps_for_scheduler = (
+        num_training_steps_for_scheduler - args.final_lr_ratio * num_warmup_steps
+    ) / (1 - args.final_lr_ratio)
+
     lr_scheduler = get_scheduler(
         name=args.lr_scheduler_type,
         optimizer=optimizer,
         num_training_steps=num_training_steps_for_scheduler,
-        num_warmup_steps=int(num_training_steps_for_scheduler * args.warmup_ratio),
+        num_warmup_steps=num_warmup_steps,
     )
     # Prepare everything with `accelerator`.
 
