@@ -20,12 +20,14 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
         *args,
         return_flash_attn_kwargs=True,
         return_position_ids=True,
+        return_seq_idx=True,
         separator_id=-100,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.return_flash_attn_kwargs = return_flash_attn_kwargs
         self.return_position_ids = return_position_ids
+        self.return_seq_idx = return_seq_idx
         self.separator_id = separator_id
         warnings.warn(
             "Using `DataCollatorWithFlattening` will flatten the entire mini batch into single long sequence."
@@ -45,6 +47,8 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
             max_length = 0
         if self.return_position_ids:
             pos_ids = []
+        if self.return_seq_idx:
+            seq_idx = []
         is_labels_provided = "labels" in features[0]
         ret = {"input_ids": [], "labels": []}
         separator = torch.tensor(
@@ -52,7 +56,7 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
             dtype=features[0]["input_ids"].dtype,
             device=features[0]["input_ids"].device,
         )
-        for item in features:
+        for s_idx, item in enumerate(features):
             input_ids = item["input_ids"]
             ret["input_ids"].append(input_ids)
             if is_labels_provided:
@@ -66,6 +70,8 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
                 max_length = max(max_length, len(input_ids))
             if self.return_position_ids:
                 pos_ids.append(torch.arange(input_ids.numel(), device=input_ids.device))
+            if self.return_seq_idx:
+                seq_idx.append(torch.full_like(input_ids, s_idx, dtype=torch.float32))
 
         if self.return_flash_attn_kwargs:
             ret["cu_seq_lens_q"] = ret["cu_seq_lens_k"] = torch.tensor(
@@ -74,6 +80,8 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
             ret["max_length_q"] = ret["max_length_k"] = max_length
         if self.return_position_ids:
             ret["position_ids"] = torch.cat(pos_ids, dim=0)[None]
+        if self.return_seq_idx:
+            ret["seq_idx"] = torch.cat(seq_idx, dim=0)[None]
         ret["input_ids"] = torch.cat(ret["input_ids"], dim=0)[None]
         ret["labels"] = torch.cat(ret["labels"], dim=0)[None]
         return ret
