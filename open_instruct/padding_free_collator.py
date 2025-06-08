@@ -71,7 +71,7 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
             if self.return_position_ids:
                 pos_ids.append(torch.arange(input_ids.numel(), device=input_ids.device))
             if self.return_seq_idx:
-                seq_idx.append(torch.full_like(input_ids, s_idx, dtype=torch.float32))
+                seq_idx.append(torch.full_like(input_ids, s_idx, dtype=torch.int32))
 
         if self.return_flash_attn_kwargs:
             ret["cu_seq_lens_q"] = ret["cu_seq_lens_k"] = torch.tensor(
