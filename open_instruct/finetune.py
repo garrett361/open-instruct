@@ -36,7 +36,6 @@ from accelerate.logging import get_logger
 from accelerate.utils import InitProcessGroupKwargs, set_seed
 from datasets import load_dataset
 from huggingface_hub import HfApi
-from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -56,6 +55,7 @@ from transformers import (
 
 from open_instruct.dataset_processor import CHAT_TEMPLATES
 from open_instruct.model_utils import push_folder_to_hub, save_with_accelerate
+from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening
 from open_instruct.utils import (
     ArgumentParserPlus,
     clean_last_n_checkpoints,
@@ -178,7 +178,9 @@ class FlatArguments:
     )
     train_file: Optional[str] = field(
         default=None,
-        metadata={"help": "The input training data file (a json/jsonl/parquet file or directory)."},
+        metadata={
+            "help": "The input training data file (a json/jsonl/parquet file or directory)."
+        },
     )
     max_train_samples: Optional[int] = field(
         default=None,
@@ -452,31 +454,31 @@ class FlatArguments:
         else:
             if self.train_file is not None:
                 if os.path.isdir(self.train_file):
-                    # just assume they 
+                    # just assume they
                     self.train_file = [
                         os.path.join(self.train_file, x)
                         for x in os.listdir(self.train_file)
                     ]
+                    self.train_file_type = [x.split(".")[-1] for x in self.train_file]
                     self.train_file_type = [
-                        x.split(".")[-1] for x in self.train_file
-                    ]
-                    self.train_file_type = [
-                        x for x in self.train_file_type 
+                        x
+                        for x in self.train_file_type
                         if x in ["json", "jsonl", "parquet"]
                     ]
-                    self.train_file_type = list(set(self.train_file_type)) # unique
+                    self.train_file_type = list(set(self.train_file_type))  # unique
                     # assume the directory cannot mix types
                     self.train_file_type = (
-                        None if len(self.train_file_type) == 0 else 
-                        self.train_file_type[0]
+                        None
+                        if len(self.train_file_type) == 0
+                        else self.train_file_type[0]
                     )
                 else:
                     self.train_file_type = self.train_file.split(".")[-1]
 
                 # some slight renames
-                if self.train_file_type == 'jsonl':
+                if self.train_file_type == "jsonl":
                     self.train_file_type = "json"
-                
+
                 assert self.train_file_type in ["json", "parquet"], (
                     "`train_file` should be a json(l) or parquet file."
                 )
@@ -503,11 +505,14 @@ class FlatArguments:
 
         if self.additional_model_arguments is not None:
             import re
+
             maybe_convert_ = lambda x: (
-                float(x) if x.count('.') == 1 and re.sub('^-?.*\.', '', x, count=1).isnumeric() else
-                (
-                    int(x) if x.count('.') == 0 and re.sub('^-?', '', x).isnumeric() else
-                    x
+                float(x)
+                if x.count(".") == 1 and re.sub("^-?.*\.", "", x, count=1).isnumeric()
+                else (
+                    int(x)
+                    if x.count(".") == 0 and re.sub("^-?", "", x).isnumeric()
+                    else x
                 )
             )
             try:
@@ -515,7 +520,7 @@ class FlatArguments:
                     x.split(":") for x in self.additional_model_arguments
                 ]
                 self.additional_model_arguments = {
-                    k:maybe_convert_(v) for k, v, in self.additional_model_arguments
+                    k: maybe_convert_(v) for k, v in self.additional_model_arguments
                 }
             except IndexError:
                 raise ValueError(
@@ -1172,7 +1177,11 @@ def main(args: FlatArguments):
     progress_bar.update(completed_steps)
 
     local_total_tokens = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
-    total_token_including_padding = torch.tensor(
+    local_total_tokens_including_padding = torch.tensor(
+        0, dtype=torch.int64, device=accelerator.device
+    )
+    # Track non-padding tokens seen for the current logging period
+    local_total_tokens_log_period = torch.tensor(
         0, dtype=torch.int64, device=accelerator.device
     )
     start_time = time.time()
@@ -1194,20 +1203,23 @@ def main(args: FlatArguments):
             active_dataloader = train_dataloader
         for step, batch in enumerate(active_dataloader):
             if "attention_mask" in batch:
-                local_total_tokens += batch["attention_mask"].sum()
-                total_token_including_padding += batch["attention_mask"].numel()
+                tokens_in_batch = batch["attention_mask"].sum()
+                local_total_tokens += tokens_in_batch
+                local_total_tokens_including_padding += batch["attention_mask"].numel()
+            # Padding-free cases:
             elif "position_ids" in batch:
                 tokens_in_batch = batch["position_ids"].numel()
                 local_total_tokens += tokens_in_batch
-                total_token_including_padding += tokens_in_batch
+                local_total_tokens_including_padding += tokens_in_batch
             elif "cu_seq_lens_q" in batch:
                 tokens_in_batch = batch["cu_seq_lens_q"][-1]
                 local_total_tokens += tokens_in_batch
-                total_token_including_padding += tokens_in_batch
+                local_total_tokens_including_padding += tokens_in_batch
             else:
                 raise ValueError(
                     f"Expected attention_mask or position_ids or cu_seq_lens_q in batch, found {batch=}"
                 )
+            local_total_tokens_log_period += tokens_in_batch
             with accelerator.accumulate(model):
                 if args.load_balancing_loss:
                     outputs = model(**batch, use_cache=False, output_router_logits=True)
@@ -1263,29 +1275,13 @@ def main(args: FlatArguments):
                 progress_bar.update(1)
                 completed_steps += 1
                 if args.logging_steps and completed_steps % args.logging_steps == 0:
-                    avg_loss = (
-                        accelerator.gather(total_loss).mean().item()
-                        / args.logging_steps
-                    )
-                    # NOTE: @goon - when using `mean` loss we average over all tokens and want to
-                    # divide by the accumulation steps. With `sum`, we're summing all tokens. The
-                    # summed-loss per step scales with the global batch size, whereas the mean does
-                    # not, which makes it more annoying to compare results across runs with
-                    # different global bsz in the former case. For this reason, we will report the
-                    # average summed loss per batch when reduce_loss="sum"
-                    if args.reduce_loss == "mean":
-                        avg_loss /= args.gradient_accumulation_steps
-                    else:
-                        # No division by n_procs is needed because we already took the `mean` of the
-                        # gather above.
-                        avg_loss /= (
-                            args.gradient_accumulation_steps
-                            * args.per_device_train_batch_size
-                        )
-                    total_tokens = accelerator.gather(local_total_tokens).sum().item()
-                    total_tokens_including_padding = (
-                        accelerator.gather(total_token_including_padding).sum().item()
-                    )
+                    # Sum the loss across procs
+                    sum_loss = accelerator.reduce(total_loss)
+
+                    total_tokens = accelerator.reduce(local_total_tokens).item()
+                    total_tokens_including_padding = accelerator.reduce(
+                        local_total_tokens_including_padding
+                    ).item()
                     avg_tokens_per_batch = (
                         total_tokens
                         / accelerator.num_processes
@@ -1300,10 +1296,33 @@ def main(args: FlatArguments):
                         / args.gradient_accumulation_steps
                         / completed_steps
                     )
+
+                    # Cases:
+                    # 1) "mean" loss: report the average loss across all procs. Roughly constant
+                    # w/r/t global batch size.
+                    # 2) "sum" loss: report the sum loss across all procs (scales with global batch
+                    # size) as well as the avg loss per non-trivial prediction token, which should
+                    # again be roughly global-batch-size-independent.
+                    tok_this_step = accelerator.reduce(
+                        local_total_tokens_log_period
+                    ).item()
+                    if args.reduce_loss == "mean":
+                        total_fwd_bwd_passes = (
+                            args.logging_steps
+                            * args.gradient_accumulation_steps
+                            * accelerator.num_processes
+                        )
+                        avg_loss = (sum_loss / total_fwd_bwd_passes).item()
+                    elif args.reduce_loss == "sum":
+                        avg_loss = (sum_loss / tok_this_step).item()
+
+                    local_total_tokens_log_period.zero_()
+
                     metrics_to_log = {
                         "learning_rate": lr_scheduler.get_last_lr()[0],
                         "train_loss": avg_loss,
                         "total_tokens": total_tokens,
+                        "tokens_this_step": tok_this_step,
                         "avg_tokens_per_batch": avg_tokens_per_batch,
                         "avg_tokens_per_batch_including_padding": avg_tokens_per_batch_including_padding,
                         "per_device_tps": total_tokens
@@ -1322,6 +1341,8 @@ def main(args: FlatArguments):
                         )
                         / 2**30,
                     }
+                    if args.reduce_loss == "sum":
+                        metrics_to_log["sum_loss"] = sum_loss.item()
 
                     sec_per_step = (time.time() - start_time) / (
                         completed_steps - resume_step
