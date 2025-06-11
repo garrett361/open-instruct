@@ -510,10 +510,9 @@ def encode_sft_example(example, tokenizer, max_seq_length):
     messages = example["messages"]
 
     additional_inputs = {}
-    if "tools" in example:
-        additional_inputs["tools"] = example["tools"]
-    if "documents" in example:
-        additional_inputs["documents"] = example["documents"]
+    for k in ["tools", "documents"]:
+        if k in example:
+            additional_inputs[k] = example[k]
 
     if len(messages) == 0:
         raise ValueError("messages field is empty.")
