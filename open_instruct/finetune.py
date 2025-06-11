@@ -448,8 +448,8 @@ class FlatArguments:
         else:
             if self.train_file is not None:
                 extension = self.train_file.split(".")[-1]
-                assert extension in ["json", "jsonl"], (
-                    "`train_file` should be a json or a jsonl file."
+                assert extension in ["json", "jsonl", "parquet"], (
+                    "`train_file` should be a json or a jsonl or parquet file."
                 )
         if (
             (
@@ -650,9 +650,12 @@ def main(args: FlatArguments):
         dataset_args = {}
         if args.train_file is not None:
             data_files["train"] = args.train_file
+            data_type = "json"
+            if args.train_file.endswith('.parquet'):
+                data_type = "parquet" 
         with accelerator.main_process_first():
             raw_datasets = load_dataset(
-                "json",
+                data_type,
                 data_files=data_files,
                 **dataset_args,
             )
