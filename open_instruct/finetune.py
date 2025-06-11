@@ -493,7 +493,10 @@ class FlatArguments:
                     k:maybe_convert_(v) for k, v, in self.additional_model_arguments
                 }
             except IndexError:
-                raise ValueError("Malformed additional model arguments. Should be list of key:val.")
+                raise ValueError(
+                    "Malformed additional model arguments. "
+                    "Should be space-delimited list of key:val."
+                )
         else:
             self.additional_model_arguments = {}
 
