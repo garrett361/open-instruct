@@ -213,6 +213,10 @@ class FlatArguments:
             " Use only when tokenizer does not add bos token by default."
         },
     )
+    additional_model_arguments: Optional[list[str]] = field(
+        default=None,
+        metadata={"help": "A list of key:val to be passed as additional model args."},
+    )
     clip_grad_norm: float = field(
         default=-1,
         metadata={
@@ -472,6 +476,27 @@ class FlatArguments:
                 "Cannot launch Beaker evaluation jobs without pushing to the Hub."
             )
 
+        if self.additional_model_arguments is not None:
+            import re
+            maybe_convert_ = lambda x: (
+                float(x) if x.count('.') == 1 and re.sub('^-?.*\.', '', x, count=1).isnumeric() else
+                (
+                    int(x) if x.count('.') == 0 and re.sub('^-?', '', x).isnumeric() else
+                    x
+                )
+            )
+            try:
+                self.additional_model_arguments = [
+                    x.split(":") for x in self.additional_model_arguments
+                ]
+                self.additional_model_arguments = {
+                    k:maybe_convert_(v) for k, v, in self.additional_model_arguments
+                }
+            except IndexError:
+                raise ValueError("Malformed additional model arguments. Should be list of key:val.")
+        else:
+            self.additional_model_arguments = {}
+
 
 def encode_sft_example(example, tokenizer, max_seq_length):
     """
@@ -666,12 +691,14 @@ def main(args: FlatArguments):
             args.config_name,
             revision=args.model_revision,
             trust_remote_code=args.trust_remote_code,
+            **args.additional_model_arguments,
         )
     elif args.model_name_or_path:
         config = AutoConfig.from_pretrained(
             args.model_name_or_path,
             revision=args.model_revision,
             trust_remote_code=args.trust_remote_code,
+            **args.additional_model_arguments,
         )
     else:
         raise ValueError(
