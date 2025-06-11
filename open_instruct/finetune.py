@@ -508,6 +508,13 @@ def encode_sft_example(example, tokenizer, max_seq_length):
     We use the `apply_chat_template` function from the tokenizer to tokenize the messages and prepare the input and label tensors.
     """
     messages = example["messages"]
+
+    additional_inputs = {}
+    if "tools" in example:
+        additional_inputs["tools"] = example["tools"]
+    if "documents" in example:
+        additional_inputs["documents"] = example["documents"]
+
     if len(messages) == 0:
         raise ValueError("messages field is empty.")
     input_ids = tokenizer.apply_chat_template(
@@ -518,6 +525,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
         truncation=True,
         max_length=max_seq_length,
         add_generation_prompt=False,
+        **additional_inputs,
     )
     labels = input_ids.clone()
     # mask the non-assistant part for avoiding loss
@@ -537,6 +545,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                     truncation=True,
                     max_length=max_seq_length,
                     add_generation_prompt=False,
+                    **additional_inputs,
                 ).shape[1]
             # next, we calculate the end index of this non-assistant message
             if (
@@ -554,6 +563,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                     truncation=True,
                     max_length=max_seq_length,
                     add_generation_prompt=True,
+                    **additional_inputs,
                 ).shape[1]
             else:
                 # for the last message or the message that doesn't follow with an assistant message,
@@ -566,6 +576,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                     truncation=True,
                     max_length=max_seq_length,
                     add_generation_prompt=False,
+                    **additional_inputs,
                 ).shape[1]
             # set the label to -100 for the non-assistant part
             labels[:, message_start_idx:message_end_idx] = -100
