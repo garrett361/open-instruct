@@ -507,14 +507,14 @@ def debug_apply_chat_template_and_tokenize(
             {"role": "assistant", "content": "LLM"},
         ]
 
-    text = tokenizer.apply_chat_template(messages, tokenize=False)
-    print(f"\n== messages:\n{messages}")
-    print(f"\n== apply_chat_template(messages):\n{text}")
-    
+    text = tokenizer.apply_chat_template(messages, tokenize=False)    
     tokens = tokenizer.encode(text, add_special_tokens=False)
     decoded_tokens = [tokenizer.decode([t]) for t in tokens]
     zipped = list(zip(tokens, decoded_tokens))
-    print(f"{repr(text)} \n-> (len:{len(tokens)}) {tokens}\n")
+
+    print(f"\n== messages:\n{messages}")
+    print(f"\n== text = apply_chat_template(messages):\n{text}")
+    print(f"\n== repr(text): {repr(text)} \n -> tokenized to {len(tokens):,} tokens: -> {tokens}\n")
     for i, (token_id, token_str) in enumerate(zipped):
         print(f"{token_id:6d} -> `{token_str}`")
         
@@ -690,7 +690,7 @@ def main(args: FlatArguments):
             all_special_tokens = existing_special_tokens + new_special_tokens
             tokenizer.add_special_tokens({"additional_special_tokens": all_special_tokens})
             if accelerator.is_main_process:
-                print(f"\n== (DQA) Updated special tokens ({len(existing_special_tokens)} -> {len(all_special_tokens)}): {all_special_tokens}")
+                print(f"\n== Updated special tokens ({len(existing_special_tokens)} -> {len(all_special_tokens)}): {all_special_tokens}")
     
                 
     if args.model_name_or_path:

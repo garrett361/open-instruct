@@ -57,6 +57,9 @@ from transformers import (
     get_scheduler,
 )
 
+
+
+
 from open_instruct.dataset_transformation import (
     INPUT_IDS_KEY,
     TOKENIZED_SFT_DATASET_KEYS,
@@ -77,9 +80,9 @@ from open_instruct.utils import (
     maybe_use_ai2_wandb_entity,
 )
 
-from typing import List, Dict, Optional
-from transformers import PreTrainedTokenizer
 
+from transformers import PreTrainedTokenizer
+from typing import List, Literal, Optional, Union, Dict
 from dataclasses import asdict
 import sys
 
