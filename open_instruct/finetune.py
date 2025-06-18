@@ -36,7 +36,7 @@ from accelerate.logging import get_logger
 from accelerate.utils import InitProcessGroupKwargs, set_seed
 from datasets import load_dataset
 from huggingface_hub import HfApi
-from padding_free_collator import TensorDataCollatorWithFlattening
+from .padding_free_collator import TensorDataCollatorWithFlattening
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -508,6 +508,12 @@ def encode_sft_example(example, tokenizer, max_seq_length):
     We use the `apply_chat_template` function from the tokenizer to tokenize the messages and prepare the input and label tensors.
     """
     messages = example["messages"]
+
+    additional_inputs = {}
+    for k in ["tools", "documents"]:
+        if k in example:
+            additional_inputs[k] = example[k]
+
     if len(messages) == 0:
         raise ValueError("messages field is empty.")
     input_ids = tokenizer.apply_chat_template(
@@ -518,6 +524,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
         truncation=True,
         max_length=max_seq_length,
         add_generation_prompt=False,
+        **additional_inputs,
     )
     labels = input_ids.clone()
     # mask the non-assistant part for avoiding loss
@@ -537,6 +544,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                     truncation=True,
                     max_length=max_seq_length,
                     add_generation_prompt=False,
+                    **additional_inputs,
                 ).shape[1]
             # next, we calculate the end index of this non-assistant message
             if (
@@ -554,6 +562,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                     truncation=True,
                     max_length=max_seq_length,
                     add_generation_prompt=True,
+                    **additional_inputs,
                 ).shape[1]
             else:
                 # for the last message or the message that doesn't follow with an assistant message,
@@ -566,6 +575,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                     truncation=True,
                     max_length=max_seq_length,
                     add_generation_prompt=False,
+                    **additional_inputs,
                 ).shape[1]
             # set the label to -100 for the non-assistant part
             labels[:, message_start_idx:message_end_idx] = -100
