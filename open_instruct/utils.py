@@ -903,10 +903,21 @@ def upload_metadata_to_hf(
 
 def _get_default_messages():
     # used for testing granite4 chat template
+    # messages = [
+    #         {"role": "user", "content": "Who?"},
+    #         {"role": "assistant", "content": "LLM"},
+    #     ]
     messages = [
-            {"role": "user", "content": "Who?"},
-            {"role": "assistant", "content": "LLM"},
-        ]
+        {"role": "system", "content": "You are a weather assistant that responds with relevant function calls instead of natural language."},
+        {"role": "user", "content": "What's the weather like in Bengaluru?"},
+        {"role": "assistant", "content": "get_coordinates(city='Bengaluru')"},
+        {"role": "system", "content": "Coordinates retrieved successfully. You can now use weather-related functions with latitude and longitude."},
+        {"role": "user", "content": "Can you tell me the current temperature there?"},
+        {"role": "assistant", "content": "get_current_weather(lat=12.97, lon=77.59)"},
+        {"role": "system", "content": "User has requested a multi-day forecast. Switch to forecast mode."},
+        {"role": "user", "content": "Actually, I need the 3-day forecast for planning a trip."},
+        {"role": "assistant", "content": "get_weather_forecast(lat=12.97, lon=77.59, days=3)"},
+    ]
     return messages
 
 def _get_default_tools():
