@@ -147,3 +147,7 @@ dmypy.json
 .idea/
 .vscode
 .DS_Store
+
+
+# script:
+open_instruct/finetune-*.py

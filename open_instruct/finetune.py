@@ -17,7 +17,7 @@
 import json
 import logging
 import math
-import os
+import os,sys
 import random
 import shutil
 import subprocess
@@ -67,6 +67,8 @@ from open_instruct.utils import (
     maybe_use_ai2_hf_entity,
     maybe_use_ai2_wandb_entity,
     upload_metadata_to_hf,
+    debug_chat_template_tokenization,
+    stop_debugging
 )
 
 logger = get_logger(__name__)
@@ -118,6 +120,12 @@ class FlatArguments:
             )
         },
     )
+    # List of special tokens to be added to tokenizer, eg: 
+    add_special_tokens: Optional[List[str]] = field(
+        default=None,
+        metadata={"help": "List of additional special tokens to add to the tokenizer"},
+    )
+
     use_flash_attn: bool = field(
         default=True,
         metadata={"help": "Whether to use flash attention in the model training"},
@@ -714,8 +722,8 @@ def main(args: FlatArguments):
         else args.tokenizer_revision
     )
     if tokenizer_revision != args.model_revision:
-        # Warn user if tokenizer and model use different revisions; this is an unusual
-        # use case.
+        # Warn user if tokenizer and model use different revisions; 
+        # this is an unusual use case.
         warning = f"""Requested tokenizer revision `{tokenizer_revision}` is different
                    from the model revision `{args.model_revision}`."""
         logger.warning(warning)
@@ -826,6 +834,18 @@ def main(args: FlatArguments):
         assert num_added_tokens == 1, (
             "We detected no padding token but add_special_tokens did not add one."
         )
+     
+    # add special tokens if they are provided:   
+    if args.add_special_tokens is not None:
+        existing_special_tokens = tokenizer.special_tokens_map.get("additional_special_tokens", [])
+        new_special_tokens = [t for t in args.add_special_tokens if t not in existing_special_tokens]
+        if new_special_tokens:  
+            all_special_tokens = existing_special_tokens + new_special_tokens
+            tokenizer.add_special_tokens({"additional_special_tokens": all_special_tokens})
+            if accelerator.is_main_process:
+                print(f"\n== Updated special tokens ({len(existing_special_tokens)} -> {len(all_special_tokens)}): {all_special_tokens}")
+                
+    
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
@@ -846,7 +866,17 @@ def main(args: FlatArguments):
     # this will be used for encoding the training examples
     # and saved together with the tokenizer to be used later.
     if args.chat_template_name in CHAT_TEMPLATES:
-        tokenizer.chat_template = CHAT_TEMPLATES[args.chat_template_name]
+        template_config = CHAT_TEMPLATES.get(args.chat_template_name)
+        
+        accelerator.print(f"\n== template_config: {template_config}")
+
+        if template_config["type"] == "inline":
+            tokenizer.chat_template = template_config["template"]
+        elif template_config["type"] == "file":
+            with open(template_config["path"], 'r') as f:
+                tokenizer.chat_template = f.read().strip()
+        else:
+            raise ValueError(f"Unknown chat template type: {template_config['type']}")
     else:
         try:
             tokenizer.chat_template = AutoTokenizer.from_pretrained(
@@ -868,6 +898,18 @@ def main(args: FlatArguments):
         # also add bos in the chat template if not already there
         tokenizer.chat_template = "{{ bos_token }}" + tokenizer.chat_template
 
+    
+    if accelerator.is_main_process:
+        accelerator.print(f"\n **** debug_chat_template_tokenization ****")
+        # debug_chat_template_tokenization(tokenizer)
+        debug_chat_template_tokenization(tokenizer,"Default","Default","Default")
+    
+    # accelerator.wait_for_everyone()
+    # stop_debugging(accelerator)
+    
+    
+    
+    
     if args.use_lora:
         if args.use_qlora:
             model = prepare_model_for_kbit_training(
@@ -928,8 +970,9 @@ def main(args: FlatArguments):
         )
 
     # Log a few random samples from the training set:
-    for index in random.sample(range(len(train_dataset)), 3):
-        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+    if accelerator.is_main_process:
+        for index in random.sample(range(len(train_dataset)), 3):
+            logger.info(f"\nSample {index:,} of the training set: {train_dataset[index]}.")
 
     # DataLoaders creation:
     if args.padding_free:
@@ -972,7 +1015,7 @@ def main(args: FlatArguments):
         },
     ]
 
-    accelerator.print("Creating optimizer")
+    accelerator.print(f"\n **** Creating optimizer ****")
     if args.use_qlora:
         from bitsandbytes.optim import AdamW
 
@@ -1034,14 +1077,17 @@ def main(args: FlatArguments):
         num_warmup_steps=num_warmup_steps,
     )
     # Prepare everything with `accelerator`.
-
-    accelerator.print("Preparing accelerator")
+    
+    
+    accelerator.print(f"\n **** Preparing accelerator ****")
+        
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )
-    accelerator.print(f"{model=}")
-    accelerator.print(f"{accelerator.state.fsdp_plugin=}")
-    accelerator.print(f"{args=}")
+    if accelerator.is_main_process:
+        accelerator.print(f"\n== {model=}")
+        accelerator.print(f"\n== {accelerator.state.fsdp_plugin=}")
+        accelerator.print(f"\n== {args=}")
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(
