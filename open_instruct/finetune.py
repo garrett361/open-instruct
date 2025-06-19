@@ -69,6 +69,8 @@ from open_instruct.utils import (
     upload_metadata_to_hf,
 )
 
+from open_instruct.utils_granite import debug_chat_template_tokenization, stop_debugging,add_special_chat_tokens
+
 logger = get_logger(__name__)
 
 
@@ -118,6 +120,12 @@ class FlatArguments:
             )
         },
     )
+    # List of special tokens to be added to tokenizer, eg: 
+    add_special_tokens: Optional[List[str]] = field(
+        default=None,
+        metadata={"help": "List of additional special tokens to add to the tokenizer"},
+    )
+
     use_flash_attn: bool = field(
         default=True,
         metadata={"help": "Whether to use flash attention in the model training"},
@@ -854,6 +862,10 @@ def main(args: FlatArguments):
         assert num_added_tokens == 1, (
             "We detected no padding token but add_special_tokens did not add one."
         )
+     
+    # add special tokens if they are provided:   
+    if args.add_special_tokens is not None:
+        tokenizer = add_special_chat_tokens(tokenizer,args.add_special_tokens)
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
@@ -956,9 +968,10 @@ def main(args: FlatArguments):
         )
 
     # Log a few random samples from the training set:
-    for index in random.sample(range(len(train_dataset)), 3):
-        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
-
+    if accelerator.is_main_process:
+        for index in random.sample(range(len(train_dataset)), 3):
+            logger.info(f"\nSample {index:,} of the training set: {train_dataset[index]}.")
+    
     # DataLoaders creation:
     if args.padding_free:
         accelerator.print("Using padding-free collation")
@@ -1067,9 +1080,10 @@ def main(args: FlatArguments):
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )
-    accelerator.print(f"{model=}")
-    accelerator.print(f"{accelerator.state.fsdp_plugin=}")
-    accelerator.print(f"{args=}")
+    if accelerator.is_main_process:
+        accelerator.print(f"\n== {model=}")
+        accelerator.print(f"\n== {accelerator.state.fsdp_plugin=}")
+        accelerator.print(f"\n== {args=}")
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(
