@@ -69,8 +69,6 @@ from open_instruct.utils import (
     upload_metadata_to_hf,
 )
 
-from open_instruct.utils_granite import debug_chat_template_tokenization, stop_debugging,add_special_chat_tokens
-
 logger = get_logger(__name__)
 
 
@@ -120,12 +118,6 @@ class FlatArguments:
             )
         },
     )
-    # List of special tokens to be added to tokenizer, eg: 
-    add_special_tokens: Optional[List[str]] = field(
-        default=None,
-        metadata={"help": "List of additional special tokens to add to the tokenizer"},
-    )
-
     use_flash_attn: bool = field(
         default=True,
         metadata={"help": "Whether to use flash attention in the model training"},
@@ -186,7 +178,7 @@ class FlatArguments:
     )
     train_file: Optional[str] = field(
         default=None,
-        metadata={"help": "The input training data file (a json/jsonl file)."},
+        metadata={"help": "The input training data file (a json/jsonl/parquet file or directory)."},
     )
     max_train_samples: Optional[int] = field(
         default=None,
@@ -459,8 +451,29 @@ class FlatArguments:
             )
         else:
             if self.train_file is not None:
-                extension = self.train_file.split(".")[-1]
-                assert extension in ["json", "jsonl", "parquet"], (
+                if os.path.isdir(self.train_file):
+                    # just assume they 
+                    self.train_file = [
+                        os.path.join(self.train_file, x)
+                        for x in os.listdir(self.train_file)
+                    ]
+                    self.train_file_type = [
+                        x.split(".")[-1] for x in self.train_file
+                    ]
+                    self.train_file_type = [
+                        x for x in self.train_file_type 
+                        if x in ["json", "jsonl", "parquet"]
+                    ]
+                    self.train_file_type = list(set(self.train_file_type)) # unique
+                    # assume the directory cannot mix types
+                    self.train_file_type = (
+                        None if len(self.train_file_type) == 0 else 
+                        self.train_file_type[0]
+                    )
+                else:
+                    self.train_file_type = self.train_file.split(".")[-1]
+                
+                assert self.train_file_type in ["json", "jsonl", "parquet"], (
                     "`train_file` should be a json or a jsonl or parquet file."
                 )
         if (
@@ -696,12 +709,9 @@ def main(args: FlatArguments):
         dataset_args = {}
         if args.train_file is not None:
             data_files["train"] = args.train_file
-            data_type = "json"
-            if args.train_file.endswith('.parquet'):
-                data_type = "parquet" 
         with accelerator.main_process_first():
             raw_datasets = load_dataset(
-                data_type,
+                args.train_file_type,
                 data_files=data_files,
                 **dataset_args,
             )
@@ -844,10 +854,6 @@ def main(args: FlatArguments):
         assert num_added_tokens == 1, (
             "We detected no padding token but add_special_tokens did not add one."
         )
-     
-    # add special tokens if they are provided:   
-    if args.add_special_tokens is not None:
-        tokenizer = add_special_chat_tokens(tokenizer,args.add_special_tokens)
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
@@ -950,9 +956,8 @@ def main(args: FlatArguments):
         )
 
     # Log a few random samples from the training set:
-    if accelerator.is_main_process:
-        for index in random.sample(range(len(train_dataset)), 3):
-            logger.info(f"\nSample {index:,} of the training set: {train_dataset[index]}.")
+    for index in random.sample(range(len(train_dataset)), 3):
+        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # DataLoaders creation:
     if args.padding_free:
@@ -1062,10 +1067,9 @@ def main(args: FlatArguments):
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )
-    if accelerator.is_main_process:
-        accelerator.print(f"\n== {model=}")
-        accelerator.print(f"\n== {accelerator.state.fsdp_plugin=}")
-        accelerator.print(f"\n== {args=}")
+    accelerator.print(f"{model=}")
+    accelerator.print(f"{accelerator.state.fsdp_plugin=}")
+    accelerator.print(f"{args=}")
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(
