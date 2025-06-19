@@ -36,7 +36,7 @@ from accelerate.logging import get_logger
 from accelerate.utils import InitProcessGroupKwargs, set_seed
 from datasets import load_dataset
 from huggingface_hub import HfApi
-from .padding_free_collator import TensorDataCollatorWithFlattening
+from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -178,7 +178,7 @@ class FlatArguments:
     )
     train_file: Optional[str] = field(
         default=None,
-        metadata={"help": "The input training data file (a json/jsonl file)."},
+        metadata={"help": "The input training data file (a json/jsonl/parquet file or directory)."},
     )
     max_train_samples: Optional[int] = field(
         default=None,
@@ -451,8 +451,29 @@ class FlatArguments:
             )
         else:
             if self.train_file is not None:
-                extension = self.train_file.split(".")[-1]
-                assert extension in ["json", "jsonl", "parquet"], (
+                if os.path.isdir(self.train_file):
+                    # just assume they 
+                    self.train_file = [
+                        os.path.join(self.train_file, x)
+                        for x in os.listdir(self.train_file)
+                    ]
+                    self.train_file_type = [
+                        x.split(".")[-1] for x in self.train_file
+                    ]
+                    self.train_file_type = [
+                        x for x in self.train_file_type 
+                        if x in ["json", "jsonl", "parquet"]
+                    ]
+                    self.train_file_type = list(set(self.train_file_type)) # unique
+                    # assume the directory cannot mix types
+                    self.train_file_type = (
+                        None if len(self.train_file_type) == 0 else 
+                        self.train_file_type[0]
+                    )
+                else:
+                    self.train_file_type = self.train_file.split(".")[-1]
+                
+                assert self.train_file_type in ["json", "jsonl", "parquet"], (
                     "`train_file` should be a json or a jsonl or parquet file."
                 )
         if (
@@ -688,12 +709,9 @@ def main(args: FlatArguments):
         dataset_args = {}
         if args.train_file is not None:
             data_files["train"] = args.train_file
-            data_type = "json"
-            if args.train_file.endswith('.parquet'):
-                data_type = "parquet" 
         with accelerator.main_process_first():
             raw_datasets = load_dataset(
-                data_type,
+                args.train_file_type,
                 data_files=data_files,
                 **dataset_args,
             )
