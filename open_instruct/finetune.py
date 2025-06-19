@@ -17,7 +17,7 @@
 import json
 import logging
 import math
-import os,sys
+import os
 import random
 import shutil
 import subprocess
@@ -67,9 +67,9 @@ from open_instruct.utils import (
     maybe_use_ai2_hf_entity,
     maybe_use_ai2_wandb_entity,
     upload_metadata_to_hf,
-    debug_chat_template_tokenization,
-    stop_debugging
 )
+
+from open_instruct.utils_granite import debug_chat_template_tokenization, stop_debugging,add_special_chat_tokens
 
 logger = get_logger(__name__)
 
@@ -516,6 +516,12 @@ def encode_sft_example(example, tokenizer, max_seq_length):
     We use the `apply_chat_template` function from the tokenizer to tokenize the messages and prepare the input and label tensors.
     """
     messages = example["messages"]
+
+    additional_inputs = {}
+    for k in ["tools", "documents"]:
+        if k in example:
+            additional_inputs[k] = example[k]
+
     if len(messages) == 0:
         raise ValueError("messages field is empty.")
     input_ids = tokenizer.apply_chat_template(
@@ -526,6 +532,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
         truncation=True,
         max_length=max_seq_length,
         add_generation_prompt=False,
+        **additional_inputs,
     )
     labels = input_ids.clone()
     # mask the non-assistant part for avoiding loss
@@ -545,6 +552,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                     truncation=True,
                     max_length=max_seq_length,
                     add_generation_prompt=False,
+                    **additional_inputs,
                 ).shape[1]
             # next, we calculate the end index of this non-assistant message
             if (
@@ -562,6 +570,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                     truncation=True,
                     max_length=max_seq_length,
                     add_generation_prompt=True,
+                    **additional_inputs,
                 ).shape[1]
             else:
                 # for the last message or the message that doesn't follow with an assistant message,
@@ -574,6 +583,7 @@ def encode_sft_example(example, tokenizer, max_seq_length):
                     truncation=True,
                     max_length=max_seq_length,
                     add_generation_prompt=False,
+                    **additional_inputs,
                 ).shape[1]
             # set the label to -100 for the non-assistant part
             labels[:, message_start_idx:message_end_idx] = -100
@@ -722,8 +732,8 @@ def main(args: FlatArguments):
         else args.tokenizer_revision
     )
     if tokenizer_revision != args.model_revision:
-        # Warn user if tokenizer and model use different revisions; 
-        # this is an unusual use case.
+        # Warn user if tokenizer and model use different revisions; this is an unusual
+        # use case.
         warning = f"""Requested tokenizer revision `{tokenizer_revision}` is different
                    from the model revision `{args.model_revision}`."""
         logger.warning(warning)
@@ -837,15 +847,7 @@ def main(args: FlatArguments):
      
     # add special tokens if they are provided:   
     if args.add_special_tokens is not None:
-        existing_special_tokens = tokenizer.special_tokens_map.get("additional_special_tokens", [])
-        new_special_tokens = [t for t in args.add_special_tokens if t not in existing_special_tokens]
-        if new_special_tokens:  
-            all_special_tokens = existing_special_tokens + new_special_tokens
-            tokenizer.add_special_tokens({"additional_special_tokens": all_special_tokens})
-            if accelerator.is_main_process:
-                print(f"\n== Updated special tokens ({len(existing_special_tokens)} -> {len(all_special_tokens)}): {all_special_tokens}")
-                
-    
+        tokenizer = add_special_chat_tokens(tokenizer,args.add_special_tokens)
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
@@ -866,17 +868,7 @@ def main(args: FlatArguments):
     # this will be used for encoding the training examples
     # and saved together with the tokenizer to be used later.
     if args.chat_template_name in CHAT_TEMPLATES:
-        template_config = CHAT_TEMPLATES.get(args.chat_template_name)
-        
-        accelerator.print(f"\n== template_config: {template_config}")
-
-        if template_config["type"] == "inline":
-            tokenizer.chat_template = template_config["template"]
-        elif template_config["type"] == "file":
-            with open(template_config["path"], 'r') as f:
-                tokenizer.chat_template = f.read().strip()
-        else:
-            raise ValueError(f"Unknown chat template type: {template_config['type']}")
+        tokenizer.chat_template = CHAT_TEMPLATES[args.chat_template_name]
     else:
         try:
             tokenizer.chat_template = AutoTokenizer.from_pretrained(
@@ -901,13 +893,10 @@ def main(args: FlatArguments):
     
     if accelerator.is_main_process:
         accelerator.print(f"\n **** debug_chat_template_tokenization ****")
-        # debug_chat_template_tokenization(tokenizer)
-        debug_chat_template_tokenization(tokenizer,"Default","Default","Default")
+        # debug_chat_template_tokenization(tokenizer,"Default","Default","Default")
+        debug_chat_template_tokenization(tokenizer,None,None,None)
     
-    # accelerator.wait_for_everyone()
-    # stop_debugging(accelerator)
-    
-    
+    stop_debugging(accelerator)
     
     
     if args.use_lora:
@@ -1015,7 +1004,7 @@ def main(args: FlatArguments):
         },
     ]
 
-    accelerator.print(f"\n **** Creating optimizer ****")
+    accelerator.print("Creating optimizer")
     if args.use_qlora:
         from bitsandbytes.optim import AdamW
 
@@ -1077,10 +1066,8 @@ def main(args: FlatArguments):
         num_warmup_steps=num_warmup_steps,
     )
     # Prepare everything with `accelerator`.
-    
-    
-    accelerator.print(f"\n **** Preparing accelerator ****")
-        
+
+    accelerator.print("Preparing accelerator")
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )

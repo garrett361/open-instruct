@@ -41,10 +41,6 @@ from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
 
-# chat templates defined in jinja2 files are stored in subfolder `./chat_templates`
-# CHAT_TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "chat_templates") # working dir
-CHAT_TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_templates") # this .py's dir
-
 logging.basicConfig(level=logging.INFO)
 
 
@@ -92,50 +88,41 @@ BINARY_DATASET_KEYS = [
 # flake8: noqa
 # note we added `{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}`
 # because we want the template to not output eos_token if `add_generation_prompt=True`
+
+CHAT_TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_templates")
+with open(os.path.join(CHAT_TEMPLATE_DIR, "ct-granite4.jinja2"), 'r', encoding='utf-8') as fid:
+    granite4_template = fid.read().strip()
+
 CHAT_TEMPLATES = {
-    "simple_concat_with_space": {
-        "type": "inline",
-        "template": (
+    "simple_concat_with_space": (
         "{% for message in messages %}"
         "{{ ' ' if not loop.first else '' }}"
         "{{ message['content'] }}"
         "{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}"
         "{% endfor %}"
-        )
-    },
-    "simple_concat_with_new_line": {
-        "type": "inline",
-        "template": (
+    ),
+    "simple_concat_with_new_line": (
         "{% for message in messages %}"
         "{{ '\n' if not loop.first else '' }}"
         "{{ message['content'] }}"
         "{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}"
         "{% endfor %}"
-        )
-    },
-    "simple_chat":  {
-        "type": "inline",
-        "template": (
+    ),
+    "simple_chat": (
         "{% for message in messages %}"
         "{{ '\n\n' if not loop.first else '' }}"
         "{{ message['role'].capitalize() + ': ' + message['content'] }}"
         "{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}"
         "{% endfor %}"
-        )
-    },
-    "assistant_message_only":  {
-        "type": "inline",
-        "template": (
+    ),
+    "assistant_message_only": (
         "{% for message in messages %}"
         "{% if message['role'] == 'assistant' %}"
         "{{ message['content'] }}"
         "{% endif %}"
         "{% endfor %}"
-        )
-    },
-    "zephyr":  {
-        "type": "inline",
-        "template": (
+    ),
+    "zephyr": (
         "{% for message in messages %}"
         "{% if message['role'] == 'user' %}"
         "{{ '<|user|>\n' + message['content'] + eos_token + '\n' }}"
@@ -148,11 +135,8 @@ CHAT_TEMPLATES = {
         "{{ '<|assistant|>\n' }}"
         "{% endif %}"
         "{% endfor %}"
-        )
-    },
-    "tulu":  {
-        "type": "inline",
-        "template": (
+    ),
+    "tulu": (
         "{% for message in messages %}"
         "{% if message['role'] == 'system' %}"
         "{{ '<|system|>\n' + message['content'] + '\n' }}"
@@ -169,11 +153,8 @@ CHAT_TEMPLATES = {
         "{{ '<|assistant|>\n' }}"
         "{% endif %}"
         "{% endfor %}"
-        )
-    },
-    "granite":  {
-        "type": "inline",
-        "template": (
+    ),
+    "granite": (
         "{% for message in messages %}"
         "{% if message['role'] == 'assistant' %}"
             "{% if not loop.last %}"
@@ -188,11 +169,8 @@ CHAT_TEMPLATES = {
         "{{ '<|assistant|>\n' }}"
         "{% endif %}"
         "{% endfor %}"
-        )
-    },
-    "granite2":  {
-        "type": "inline",
-        "template": (
+    ),
+    "granite2": (
         "{%- if messages[0]['role'] == 'system' %}"
             "{%- set system_message = messages[0]['content'] %}"
             "{%- set loop_messages = messages[1:] %}"
@@ -229,13 +207,10 @@ CHAT_TEMPLATES = {
                 "{{ '<|end_of_role|>' }}"
             "{%- endif %}"
         "{%- endfor %}"
-        )
-    },
-    "granite4": {
-        "type": "file",
-        "path": os.path.join(CHAT_TEMPLATE_DIR, "ct-granite4.jinja2")
-    },
+    ),
+    "granite4": granite4_template
 }
+
 # flake8: noqa
 
 # Performance tuning. Some rough numbers:
