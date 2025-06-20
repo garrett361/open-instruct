@@ -40,6 +40,7 @@ from rich.text import Text
 from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
+
 logging.basicConfig(level=logging.INFO)
 
 
@@ -87,6 +88,11 @@ BINARY_DATASET_KEYS = [
 # flake8: noqa
 # note we added `{% if loop.last and not add_generation_prompt %}{{ eos_token }}{% endif %}`
 # because we want the template to not output eos_token if `add_generation_prompt=True`
+
+CHAT_TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_templates")
+with open(os.path.join(CHAT_TEMPLATE_DIR, "ct-granite4.jinja2"), 'r', encoding='utf-8') as fid:
+    granite4_template = fid.read().strip()
+
 CHAT_TEMPLATES = {
     "simple_concat_with_space": (
         "{% for message in messages %}"
@@ -202,7 +208,9 @@ CHAT_TEMPLATES = {
             "{%- endif %}"
         "{%- endfor %}"
     ),
+    "granite4": granite4_template
 }
+
 # flake8: noqa
 
 # Performance tuning. Some rough numbers:
