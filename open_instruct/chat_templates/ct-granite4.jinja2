@@ -26,7 +26,18 @@
     {%- set ns.documents_system_message = '' %}
 {%- endif %}
 {%- if messages[0].role == 'system' %}
-    {%- set ns.system_message = messages[0].content %}
+    {%- if messages[0].content is string %}
+        {%- set ns.system_message = messages[0].content %}
+    {%- elif messages[0].content is iterable %}
+        {%- for entry in messages[0].content %}
+            {%- if entry.type== 'text' %}
+                {%- if ns.system_message != '' %}
+                    {%- set ns.system_message = ns.system_message + '\n' %}
+                {%- endif %}
+                {%- set ns.system_message = ns.system_message + entry.text %}
+            {%- endif %}
+        {%- endfor %}
+    {%- endif %}
     {%- if tools and documents %}
         {%- set ns.system_message = ns.system_message + '\n\n' +  ns.tools_system_message + '\n\n' + ns.documents_system_message %}
     {%- elif tools %}
@@ -48,9 +59,26 @@
 {%- endif %}
 {%- for message in messages|reverse %}
     {%- set index = (messages|length - 1) - loop.index0 %}
-    {%- if message.role == 'user' and message.content is string and not(message.content.startswith('<tool_response>') and message.content.endswith('</tool_response>')) %}
-        {%- set ns.last_query_index = index %}
-        {% break %}
+    {%- if message.role == 'user' %}
+        {%- set content = namespace(val='') %}
+        {%- if message.content is string %}
+            {%- set content.val = message.content %}
+        {%- else %}
+            {%- if message.content is iterable %}
+                {%- for entry in message.content %}
+                    {%- if entry.type== 'text' %}
+                        {%- if content.val != '' %}
+                            {%- set content.val = content.val + '\n' %}
+                        {%- endif %}
+                        {%- set content.val = content.val + entry.text %}
+                    {%- endif %}
+                {%- endfor %}
+            {%- endif %}
+        {%- endif %}
+        {%-if not(content.val.startswith('<tool_response>') and content.val.endswith('</tool_response>')) %}
+            {%- set ns.last_query_index = index %}
+            {% break %}
+        {%- endif %}
     {%- endif %}
 {%- endfor %}
 {%- for message in messages %}
@@ -72,24 +100,7 @@
     {%- if (message.role == 'user') or (message.role == 'system' and not loop.first) %}
         {{- '<|start_of_role|>' + message.role + '<|end_of_role|>' + content.val + '<|end_of_text|>\n' }}
     {%- elif message.role == 'assistant' %}
-        {%- set thought = '' %}
-        {%- if message.thought is string %}
-            {%- set thought = message.thought %}
-        {%- else %}
-            {%- if '</think>' in content.val %}
-                {%- set thought = content.val.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}
-                {%- set content.val = content.val.split('</think>')[-1].lstrip('\n') %}
-            {%- endif %}
-        {%- endif %}
-        {%- if loop.index0 > ns.last_query_index %}
-            {%- if loop.last or (not loop.last and thought) %}
-                {{- '<|start_of_role|>' + message.role + '<|end_of_role|>' + '\n<think>\n' + thought.strip('\n') + '\n</think>\n\n' + content.val.lstrip('\n') }}
-            {%- else %}
-                {{- '<|start_of_role|>' + message.role + '<|end_of_role|>' + content.val }}
-            {%- endif %}
-        {%- else %}
-            {{- '<|start_of_role|>' + message.role + '<|end_of_role|>' + content.val }}
-        {%- endif %}
+        {{- '<|start_of_role|>' + message.role + '<|end_of_role|>' + content.val }}
         {%- if message.tool_calls %}
             {%- for tool_call in message.tool_calls %}
                 {%- if (loop.first and content.val) or (not loop.first) %}
@@ -124,7 +135,4 @@
 {%- endfor %}
 {%- if add_generation_prompt %}
     {{- '<|start_of_role|>assistant<|end_of_role|>' }}
-    {%- if thinking is defined and thinking is false %}
-        {{- '<think>\n\n</think>\n\n' }}
-    {%- endif %}
 {%- endif %}
