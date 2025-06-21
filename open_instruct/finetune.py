@@ -472,9 +472,13 @@ class FlatArguments:
                     )
                 else:
                     self.train_file_type = self.train_file.split(".")[-1]
+
+                # some slight renames
+                if self.train_file_type == 'jsonl':
+                    self.train_file_type = "json"
                 
-                assert self.train_file_type in ["json", "jsonl", "parquet"], (
-                    "`train_file` should be a json or a jsonl or parquet file."
+                assert self.train_file_type in ["json", "parquet"], (
+                    "`train_file` should be a json(l) or parquet file."
                 )
         if (
             (
