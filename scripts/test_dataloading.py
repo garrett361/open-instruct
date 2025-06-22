@@ -9,18 +9,17 @@ from transformers import AutoModelForCausalLM
 from accelerate import init_empty_weights
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
+from typing import Callable, List
 from types import MethodType
-
-STORE = []
 
 # builds the from_pretrained to pass through AutoModelForCausalLM
 # - loads the model on the meta device
 
-def built_from_pretrained():
+def built_from_pretrained(store: List):
 
     def forward(self, input_ids, *args, **kwargs):
         # - hook to capture the input_ids
-        STORE.append({
+        store.append({
             'input_ids': input_ids,
             'labels': kwargs.get('labels'),
         })
@@ -56,11 +55,6 @@ def accelerate_prepare(self, model, optimizer, dataloader, scheduler):
 
 # - patches
 
-patch_transformers = patch.multiple(
-    AutoModelForCausalLM,
-    from_pretrained=built_from_pretrained(),
-)
-
 patch_accelerate = patch.multiple(
     Accelerator,
     wait_for_everyone=Mock(),
@@ -71,10 +65,30 @@ patch_accelerate = patch.multiple(
     sync_gradients=False,
 )
 
-PATCHES = [
-    patch_transformers,
-    patch_accelerate,
-]
+
+def test_tuning_script(
+    script: Callable,
+    args: object, 
+    patches: List[object],
+    store: List,
+    write_data_to_directory: str = None,
+):
+    from contextlib import ExitStack
+
+    # clear the store
+    store.clear()
+    with ExitStack() as stack:
+        for patch in patches:
+            stack.enter_context(patch)
+        script(args)
+
+    if write_data_to_directory is None:
+        return store
+
+    os.makedirs(write_data_to_directory)
+    for i, data in enumerate(store):
+        torch.save(data, os.path.join(write_data_to_directory, f'batch_{i}.pt'))
+
 
 def test_finetune(
     model_name_or_path: str,
@@ -83,7 +97,6 @@ def test_finetune(
     write_data_to_directory: str = None,
 ):
     from open_instruct.finetune import main, FlatArguments
-    from contextlib import ExitStack
 
     args = FlatArguments(
         model_name_or_path=model_name_or_path,
@@ -94,19 +107,25 @@ def test_finetune(
         max_train_steps=max_train_steps,
     )
 
-    # clear the store
-    STORE.clear()
-    with ExitStack() as stack:
-        for patch in PATCHES:
-            stack.enter_context(patch)
-        main(args)
+    # - initialize store in transformers patcher
+    STORE = []
+    patch_transformers = patch.multiple(
+        AutoModelForCausalLM,
+        from_pretrained=built_from_pretrained(
+            STORE
+        ),
+    )
 
-    if write_data_to_directory is None:
-        return STORE
+    test_tuning_script(
+        main, args,
+        [
+            patch_transformers,
+            patch_accelerate,
+        ],
+        STORE,
+        write_data_to_directory,
+    )
 
-    os.makedirs(write_data_to_directory)
-    for i, data in enumerate(STORE):
-        torch.save(data, os.path.join(write_data_to_directory, f'batch_{i}.pt'))
 
 if __name__ == "__main__":
     import fire
