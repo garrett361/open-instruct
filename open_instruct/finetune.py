@@ -730,12 +730,12 @@ def main(args: FlatArguments):
 
                 dfs = []
                 reader = (
-                    pd.read_json 
+                    partial(pd.read_json , lines=True)
                     if args.train_file_type == 'json'
-                    else pd.read_parquet
+                    else partial(pd.read_parquet, engine='auto')
                 )
                 for file in train_files:
-                    dfs.append(reader(file, lines=True, orient='records'))
+                    dfs.append(reader(file, orient='records'))
 
                 raw_datasets = datasets.DatasetDict({
                     'train': datasets.Dataset.from_pandas(pd.concat(dfs))
