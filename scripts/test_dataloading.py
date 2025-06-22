@@ -116,7 +116,43 @@ def test_finetune(
         ),
     )
 
-    test_tuning_script(
+    return test_tuning_script(
+        main, args,
+        [
+            patch_transformers,
+            patch_accelerate,
+        ],
+        STORE,
+        write_data_to_directory,
+    )
+
+def test_dpo_tune(
+    model_name_or_path: str,
+    train_file: str,
+    max_train_steps: int = 2,
+    write_data_to_directory: str = None,
+):
+    from open_instruct.dpo_tune import main, FlatArguments
+
+    args = FlatArguments(
+        model_name_or_path=model_name_or_path,
+        train_file=train_file,
+        push_to_hub=False,
+        try_launch_beaker_eval_jobs=False,
+        output_dir=None,
+        max_train_steps=max_train_steps,
+    )
+
+    # - initialize store in transformers patcher
+    STORE = []
+    patch_transformers = patch.multiple(
+        AutoModelForCausalLM,
+        from_pretrained=built_from_pretrained(
+            STORE
+        ),
+    )
+
+    return test_tuning_script(
         main, args,
         [
             patch_transformers,

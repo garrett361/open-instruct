@@ -646,7 +646,9 @@ def main(args: FlatArguments):
                     quantization_config=bnb_config,
                     device_map=device_map,
                     torch_dtype=torch.bfloat16,
-                    use_flash_attention_2=True if args.use_flash_attn else False,
+                    attn_implementation="flash_attention_2"
+                    if args.use_flash_attn
+                    else "eager",
                 )
             else:
                 model = AutoModelForCausalLM.from_pretrained(
@@ -656,7 +658,9 @@ def main(args: FlatArguments):
                     config=config,
                     trust_remote_code=args.trust_remote_code,
                     low_cpu_mem_usage=args.low_cpu_mem_usage,
-                    use_flash_attention_2=True if args.use_flash_attn else False,
+                    attn_implementation="flash_attention_2"
+                    if args.use_flash_attn
+                    else "eager",
                 )
         else:
             logger.info("Training new model from scratch")
