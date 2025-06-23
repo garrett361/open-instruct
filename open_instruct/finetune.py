@@ -1299,23 +1299,22 @@ def main(args: FlatArguments):
                     )
 
                     # Cases:
-                    # 1) "mean" loss: report the average loss across all procs. Roughly constant
-                    # w/r/t global batch size.
-                    # 2) "sum" loss: report the sum loss across all procs (scales with global batch
-                    # size) as well as the avg loss per non-trivial prediction token, which should
-                    # again be roughly global-batch-size-independent.
-                    tok_this_step = accelerator.reduce(
+                    # 1) "mean" loss: report the average loss per fwd across all procs. Roughly
+                    # constant w/r/t global batch size.
+                    # 2) "sum" loss: report the average sum loss per optim step across all procs
+                    # (scales with global batch size) as well as the avg loss per non-trivial
+                    # prediction token, which should again be roughly global-batch-size-independent.
+                    tok_this_log_period = accelerator.reduce(
                         local_total_tokens_log_period
                     ).item()
+                    total_optim_steps = args.logging_steps * accelerator.num_processes
+                    total_fwd_bwd_passes = (
+                        total_optim_steps * args.gradient_accumulation_steps
+                    )
                     if args.reduce_loss == "mean":
-                        total_fwd_bwd_passes = (
-                            args.logging_steps
-                            * args.gradient_accumulation_steps
-                            * accelerator.num_processes
-                        )
                         avg_loss = (sum_loss / total_fwd_bwd_passes).item()
                     elif args.reduce_loss == "sum":
-                        avg_loss = (sum_loss / tok_this_step).item()
+                        avg_loss = (sum_loss / total_optim_steps).item()
 
                     local_total_tokens_log_period.zero_()
 
@@ -1323,7 +1322,7 @@ def main(args: FlatArguments):
                         "learning_rate": lr_scheduler.get_last_lr()[0],
                         "train_loss": avg_loss,
                         "total_tokens": total_tokens,
-                        "tokens_this_step": tok_this_step,
+                        "tokens_this_log_period": tok_this_log_period,
                         "avg_tokens_per_batch": avg_tokens_per_batch,
                         "avg_tokens_per_batch_including_padding": avg_tokens_per_batch_including_padding,
                         "per_device_tps": total_tokens
@@ -1343,7 +1342,8 @@ def main(args: FlatArguments):
                         / 2**30,
                     }
                     if args.reduce_loss == "sum":
-                        metrics_to_log["sum_loss"] = sum_loss.item()
+                        loss_per_pred_tok = (sum_loss / tok_this_log_period).item()
+                        metrics_to_log["train_loss_per_pred_tok"] = loss_per_pred_tok
 
                     sec_per_step = (time.time() - start_time) / (
                         completed_steps - resume_step
