@@ -543,11 +543,15 @@ def main(args: FlatArguments):
     timeout_kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=args.timeout))
     dataloader_config = DataLoaderConfiguration(use_seedable_sampler=True)
 
+    from accelerate.accelerator import GradientAccumulationPlugin
     accelerator = Accelerator(
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
         dataloader_config=dataloader_config,
         **accelerator_log_kwargs,
         kwargs_handlers=[timeout_kwargs],
+        gradient_accumulation_plugin=GradientAccumulationPlugin(
+            num_steps=args.gradient_accumulation_steps,
+            sync_each_batch=True,
+        ),
     )
     # Make one log on every process with the configuration for debugging.
     logging.basicConfig(
@@ -602,11 +606,12 @@ def main(args: FlatArguments):
         dataset_args = {}
         if args.train_file is not None:
             data_files["train"] = args.train_file
-        raw_datasets = load_dataset(
-            args.train_file_type,
-            data_files=data_files,
-            **dataset_args,
-        )
+        with accelerator.main_process_first():
+            raw_datasets = load_dataset(
+                args.train_file_type,
+                data_files=data_files,
+                **dataset_args,
+            )
 
     # Load pretrained model and tokenizer
     if args.config_name:
