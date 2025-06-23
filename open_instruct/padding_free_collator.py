@@ -85,3 +85,8 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
         ret["input_ids"] = torch.cat(ret["input_ids"], dim=0)[None]
         ret["labels"] = torch.cat(ret["labels"], dim=0)[None]
         return ret
+
+
+@dataclass
+class TensorDataCollatorWithFlatteningDPO(TensorDataCollatorWithFlattening):
+    pass
