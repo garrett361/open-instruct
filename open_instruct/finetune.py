@@ -1176,12 +1176,13 @@ def main(args: FlatArguments):
     # update the progress_bar if load from checkpoint
     progress_bar.update(completed_steps)
 
-    local_total_tokens = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
-    local_total_tokens_including_padding = torch.tensor(
-        0, dtype=torch.int64, device=accelerator.device
-    )
     # Track non-padding tokens seen for the current logging period
     local_total_tokens_log_period = torch.tensor(
+        0, dtype=torch.int64, device=accelerator.device
+    )
+    # And sums of tokens with and w/o padding over the course of training.
+    local_total_tokens = torch.tensor(0, dtype=torch.int64, device=accelerator.device)
+    local_total_tokens_including_padding = torch.tensor(
         0, dtype=torch.int64, device=accelerator.device
     )
     start_time = time.time()
