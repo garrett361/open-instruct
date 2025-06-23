@@ -405,8 +405,35 @@ class FlatArguments:
             raise ValueError("Need either a dataset name, dataset mixer, or a training file.")
         else:
             if self.train_file is not None:
-                extension = self.train_file.split(".")[-1]
-                assert extension in ["json", "jsonl"], "`train_file` should be a json or a jsonl file."
+                if os.path.isdir(self.train_file):
+                    # just assume they 
+                    self.train_file = [
+                        os.path.join(self.train_file, x)
+                        for x in os.listdir(self.train_file)
+                    ]
+                    self.train_file_type = [
+                        x.split(".")[-1] for x in self.train_file
+                    ]
+                    self.train_file_type = [
+                        x for x in self.train_file_type 
+                        if x in ["json", "jsonl", "parquet"]
+                    ]
+                    self.train_file_type = list(set(self.train_file_type)) # unique
+                    # assume the directory cannot mix types
+                    self.train_file_type = (
+                        None if len(self.train_file_type) == 0 else 
+                        self.train_file_type[0]
+                    )
+                else:
+                    self.train_file_type = self.train_file.split(".")[-1]
+
+                # some slight renames
+                if self.train_file_type == 'jsonl':
+                    self.train_file_type = "json"
+                
+                assert self.train_file_type in ["json", "parquet"], (
+                    "`train_file` should be a json(l) or parquet file."
+                )
         if (
             (self.dataset_name is not None and (self.dataset_mixer is not None or self.dataset_mixer_list is not None))
             or (self.dataset_name is not None and self.train_file is not None)
@@ -456,6 +483,7 @@ def get_cache_ref_logprobs(
     resume_step: int,
     epoch_range: range,
     forward_fn: Callable,
+    use_lora: bool = False,
 ):
     epoch_cached_reference_chosen_logps = []
     epoch_cached_reference_rejected_logps = []
@@ -468,7 +496,7 @@ def get_cache_ref_logprobs(
         cached_reference_rejected_logps = []
         with torch.no_grad():
             for step, batch in tqdm(enumerate(active_dataloader), disable=not accelerator.is_local_main_process):
-                if args.use_lora:
+                if use_lora:
                     with accelerator.unwrap_model(model).disable_adapter():
                         reference_chosen_logps, reference_rejected_logps, _ = forward_fn(
                             model, batch, average_log_prob=average_log_prob
@@ -575,7 +603,7 @@ def main(args: FlatArguments):
         if args.train_file is not None:
             data_files["train"] = args.train_file
         raw_datasets = load_dataset(
-            "json",
+            args.train_file_type,
             data_files=data_files,
             **dataset_args,
         )
@@ -646,7 +674,9 @@ def main(args: FlatArguments):
                     quantization_config=bnb_config,
                     device_map=device_map,
                     torch_dtype=torch.bfloat16,
-                    use_flash_attention_2=True if args.use_flash_attn else False,
+                    attn_implementation="flash_attention_2"
+                    if args.use_flash_attn
+                    else "eager",
                 )
             else:
                 model = AutoModelForCausalLM.from_pretrained(
@@ -656,7 +686,9 @@ def main(args: FlatArguments):
                     config=config,
                     trust_remote_code=args.trust_remote_code,
                     low_cpu_mem_usage=args.low_cpu_mem_usage,
-                    use_flash_attention_2=True if args.use_flash_attn else False,
+                    attn_implementation="flash_attention_2"
+                    if args.use_flash_attn
+                    else "eager",
                 )
         else:
             logger.info("Training new model from scratch")
@@ -960,6 +992,7 @@ def main(args: FlatArguments):
             resume_step,
             range(starting_epoch, args.num_train_epochs),
             forward_fn,
+            args.use_lora,
         )
         print("=============after cache logprobs")
         print_gpu_stats(init_gpu_memory)
