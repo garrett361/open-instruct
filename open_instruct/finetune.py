@@ -451,30 +451,35 @@ class FlatArguments:
             )
         else:
             if self.train_file is not None:
+                file_type_map = {
+                    "json": "json",
+                    "jsonl": "json",
+                    "parquet": "parquet",
+                }
                 if os.path.isdir(self.train_file):
-                    # just assume they 
                     self.train_file = [
                         os.path.join(self.train_file, x)
                         for x in os.listdir(self.train_file)
                     ]
+                    self.train_file_type = [x.split(".")[-1] for x in self.train_file]
                     self.train_file_type = [
-                        x.split(".")[-1] for x in self.train_file
+                        file_type_map[x]
+                        for x in self.train_file_type
+                        if x in file_type_map
                     ]
-                    self.train_file_type = [
-                        x for x in self.train_file_type 
-                        if x in ["json", "jsonl", "parquet"]
-                    ]
-                    self.train_file_type = list(set(self.train_file_type)) # unique
+                    self.train_file_type = list(set(self.train_file_type))  # unique
                     # assume the directory cannot mix types
                     self.train_file_type = (
-                        None if len(self.train_file_type) == 0 else 
-                        self.train_file_type[0]
+                        None
+                        if len(self.train_file_type) == 0
+                        else self.train_file_type[0]
                     )
                 else:
-                    self.train_file_type = self.train_file.split(".")[-1]
-                
-                assert self.train_file_type in ["json", "jsonl", "parquet"], (
-                    "`train_file` should be a json or a jsonl or parquet file."
+                    train_file_stem = self.train_file.split(".")[-1]
+                    self.train_file_type = file_type_map[train_file_stem]
+
+                assert self.train_file_type in ["json", "parquet"], (
+                    f"`train_file` should be a json or parquet file, not {self.train_file_type=}"
                 )
         if (
             (
