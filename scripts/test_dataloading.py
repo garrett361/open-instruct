@@ -15,18 +15,24 @@ from types import MethodType
 # builds the from_pretrained to pass through AutoModelForCausalLM
 # - loads the model on the meta device
 
-def built_from_pretrained(store: List):
+def built_from_pretrained(
+    store: List,
+    extra_keys: List = ['labels'],
+):
 
     def forward(self, input_ids, *args, **kwargs):
         # - hook to capture the input_ids
-        store.append({
-            'input_ids': input_ids,
-            'labels': kwargs.get('labels'),
-        })
+        store.append(
+            {
+                'input_ids': input_ids,
+                **{k:kwargs.get(k) for k in extra_keys},
+            }
+        )
 
         # - returns dummy outputs / loss
         return CausalLMOutputWithPast(
             loss=torch.tensor(0.),
+            logits=torch.zeros(input_ids.shape + (self.config.vocab_size,))
         )
 
     # mock the from_pretrained function
@@ -92,7 +98,8 @@ def test_tuning_script(
 
 def test_finetune(
     model_name_or_path: str,
-    train_file: str,
+    dataset_name: str = None,
+    train_file: str = None,
     max_train_steps: int = 2,
     write_data_to_directory: str = None,
 ):
@@ -100,6 +107,7 @@ def test_finetune(
 
     args = FlatArguments(
         model_name_or_path=model_name_or_path,
+        dataset_name=dataset_name,
         train_file=train_file,
         push_to_hub=False,
         try_launch_beaker_eval_jobs=False,
@@ -128,17 +136,20 @@ def test_finetune(
 
 def test_dpo_tune(
     model_name_or_path: str,
-    train_file: str,
+    dataset_name: str = None,
+    train_file: str = None,
     max_train_steps: int = 2,
     write_data_to_directory: str = None,
 ):
-    from open_instruct.dpo_tune import main, FlatArguments
+    from open_instruct.dpo_tune_cache import main, FlatArguments
 
     args = FlatArguments(
         model_name_or_path=model_name_or_path,
+        dataset_name=dataset_name,
         train_file=train_file,
         push_to_hub=False,
         try_launch_beaker_eval_jobs=False,
+        try_auto_save_to_beaker=False,
         output_dir=None,
         max_train_steps=max_train_steps,
     )
@@ -148,7 +159,8 @@ def test_dpo_tune(
     patch_transformers = patch.multiple(
         AutoModelForCausalLM,
         from_pretrained=built_from_pretrained(
-            STORE
+            STORE,
+            extra_keys=[],
         ),
     )
 
