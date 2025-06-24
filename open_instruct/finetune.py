@@ -890,7 +890,15 @@ def main(args: FlatArguments, tc: TokenizerConfig):
                         loss += aux_loss
                 # We keep track of the loss at each logged step
                 total_loss += loss.detach().float()
-                accelerator.backward(loss)
+                # accelerator.backward internally divides by `gradient_accumulation_steps`, which is
+                # only the right thing to do for `mean` losses, so we counteract this operation for
+                # "sum" losses. Strictly speaking, we should also multiply by the world size to
+                # turn DeepSpeed/FSDP grad-averaging into grad-summing (TODO).
+                accelerator.backward(
+                    loss
+                    if args.reduce_loss == "mean"
+                    else loss * args.gradient_accumulation_steps
+                )
                 if args.load_balancing_loss:
                     total_aux_loss += aux_loss.detach().float()
                 # clip gradient norm. don't do this with deepspeed
