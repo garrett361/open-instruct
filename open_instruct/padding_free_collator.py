@@ -119,7 +119,6 @@ def concatenated_inputs(
 
     # - need to return chosen
     ret = {
-        'chosen_input_ids': chosen_features['input_ids'],
         f'{tag}input_ids': torch.cat([chosen_features['input_ids'], rejected_features['input_ids']], axis=-1)
     }
     if "labels" in chosen_features:
@@ -156,4 +155,47 @@ def concatenated_inputs(
             chosen_features['seq_idx'][0,-1],
         ], dim=-1)
 
-    return ret
+    return ret, len(chosen_features['cu_seq_lens_k']) - 1
+
+# for dpo - padding free
+def get_batch_logps(
+    logits: torch.FloatTensor, 
+    labels: torch.LongTensor, 
+    cu_seq_lens: torch.LongTensor,
+    average_log_prob: bool = False,
+) -> torch.FloatTensor:
+
+    assert logits.shape[:-1] == labels.shape
+
+    # - we are going to get crossings at labels / logits
+    #   cont batch boundaries, but we assume that the
+    #   loss mask == True at those places
+    labels = labels[:, 1:].clone()
+    logits = logits[:, :-1, :]
+    loss_mask = labels != -100
+
+    # dummy token; we'll ignore the losses on these tokens later
+    labels[labels == -100] = 0
+
+    # there is a labels, logits shift operation above
+    cu_seq_lens = cu_seq_lens.clone() - 1
+    cu_seq_lens[0] = 0
+
+    splits = cu_seq_lens.diff().tolist()
+    per_token_logps = torch.gather(logits.log_softmax(-1), dim=2, index=labels.unsqueeze(2)).squeeze(2)
+
+    return torch.concat(
+        [
+            (
+                (ps * mask).sum(-1) / mask.sum(-1) 
+                if average_log_prob else
+                (ps * mask).sum(-1)
+            )
+            for ps, mask in 
+            zip(
+                torch.split(per_token_logps, splits, dim=-1),
+                torch.split(loss_mask, splits, dim=-1),
+            )
+
+        ]
+    )

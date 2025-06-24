@@ -25,7 +25,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import DataCollatorForSeq2Seq
 
-from open_instruct.padding_free_collator import concatenated_inputs as pf_concatenated_inputs
+from open_instruct.padding_free_collator import (
+    concatenated_inputs as pf_concatenated_inputs,
+    get_batch_logps as pf_get_batch_logps
+)
 
 torch.backends.cuda.matmul.allow_tf32 = True
 
@@ -238,7 +241,7 @@ def concatenated_forward(
     if not padding_free: 
         concatenated_batch = concatenated_inputs(batch)
     else:
-        concatenated_batch = pf_concatenated_inputs(batch)
+        concatenated_batch, bs = pf_concatenated_inputs(batch)
 
     inputs = {
         k.replace("concatenated_", ""):v
@@ -257,9 +260,19 @@ def concatenated_forward(
             **inputs
         ).logits.to(torch.float32)
         aux_loss = None
-    all_logps = _get_batch_logps(logits, concatenated_batch["concatenated_labels"], average_log_prob=average_log_prob)
-    chosen_logps = all_logps[: batch["chosen_input_ids"].shape[0]]
-    rejected_logps = all_logps[batch["chosen_input_ids"].shape[0] :]
+
+    if not padding_free:
+        all_logps = _get_batch_logps(logits, concatenated_batch["concatenated_labels"], average_log_prob=average_log_prob)
+        bs = batch["chosen_input_ids"].shape[0]
+    else:
+        all_logps = pf_get_batch_logps(
+            logits, 
+            concatenated_batch["concatenated_labels"], 
+            inputs['cu_seq_lens_k'], # assume same as q
+            average_log_prob=average_log_prob
+        )
+    chosen_logps = all_logps[:bs]
+    rejected_logps = all_logps[bs:]
     return chosen_logps, rejected_logps, aux_loss
 
 

@@ -510,7 +510,15 @@ def get_cache_ref_logprobs(
         cached_reference_chosen_logps = []
         cached_reference_rejected_logps = []
         with torch.no_grad():
-            for step, batch in tqdm(enumerate(active_dataloader), disable=not accelerator.is_local_main_process):
+            for batch in tqdm(
+                active_dataloader, 
+                disable=not accelerator.is_local_main_process,
+                initial=(
+                    resume_step 
+                    if (last_checkpoint_path and resume_step is not None)
+                    else 0
+                )
+            ):
                 if use_lora:
                     with accelerator.unwrap_model(model).disable_adapter():
                         reference_chosen_logps, reference_rejected_logps, _ = forward_fn(
@@ -1016,6 +1024,10 @@ def main(args: FlatArguments):
     forward_fn = concatenated_forward if args.concatenated_forward else separate_forward
 
     if args.padding_free:
+        if not args.concatenated_forward: 
+            raise NotImplementedError(
+                "seperate forward not implemented for padding-free"
+            )
         forward_fn = partial(forward_fn, padding_free=True)
     if args.dpo_loss_type == "dpo" or args.dpo_loss_type == "dpo_norm":
         epoch_cached_reference_chosen_logps, epoch_cached_reference_rejected_logps = get_cache_ref_logprobs(
@@ -1210,6 +1222,7 @@ def main(args: FlatArguments):
 
     if (
         args.try_auto_save_to_beaker
+        and is_beaker_job() 
         and accelerator.is_main_process
         and len(beaker_config.beaker_dataset_id_urls) > 0
         and args.output_dir.rstrip("/") != "/output"
