@@ -379,6 +379,7 @@ class FlatArguments:
             "help": "Set the final lr value at the end of training to be final_lr_ratio * learning_rate."
         },
     )
+    add_seed_and_date_to_run_name: bool = True
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:
             raise ValueError("reduce_loss must be either 'mean' or 'sum'")
@@ -430,7 +431,13 @@ def main(args: FlatArguments, tc: TokenizerConfig):
 
     # ------------------------------------------------------------
     # Set up runtime variables
-    args.run_name = f"{args.exp_name}__{args.seed}__{int(time.time())}"
+
+    # TODO: @goon - remove run_name from FlatArguments; it's just ignored and overwritten with
+    # exp_name
+    if args.add_seed_and_date_to_run_name:
+        args.run_name = f"{args.exp_name}__{args.seed}__{int(time.time())}"
+    else:
+        args.run_name = args.exp_name
     if not args.do_not_randomize_output_dir:
         args.output_dir = os.path.join(args.output_dir, args.run_name)
     logger.info("using the output directory: %s", args.output_dir)
