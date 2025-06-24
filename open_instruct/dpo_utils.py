@@ -25,6 +25,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import DataCollatorForSeq2Seq
 
+from open_instruct.padding_free_collator import concatenated_inputs as pf_concatenated_inputs
+
 torch.backends.cuda.matmul.allow_tf32 = True
 
 
@@ -227,24 +229,32 @@ def concatenated_forward(
     batch: Dict[str, Union[List, torch.LongTensor]],
     average_log_prob: bool = False,
     output_router_logits: bool = False,
+    padding_free: bool = False,
 ) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
     """Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
     We do this to avoid doing two forward passes, because it's faster for FSDP.
     """
-    concatenated_batch = concatenated_inputs(batch)
+    if not padding_free: 
+        concatenated_batch = concatenated_inputs(batch)
+    else:
+        concatenated_batch = pf_concatenated_inputs(batch)
+
+    inputs = {
+        k.replace("concatenated_", ""):v
+        for k, v in concatenated_batch.items() if k.startswith("concatenated_") and not k.endswith("labels")
+
+    }
     if output_router_logits:
         outputs = model(
-            input_ids=concatenated_batch["concatenated_input_ids"],
-            attention_mask=concatenated_batch["concatenated_attention_mask"],
+            **inputs,
             output_router_logits=True,
         )
         logits = outputs.logits.to(torch.float32)
         aux_loss = outputs.aux_loss
     else:
         logits = model(
-            input_ids=concatenated_batch["concatenated_input_ids"],
-            attention_mask=concatenated_batch["concatenated_attention_mask"],
+            **inputs
         ).logits.to(torch.float32)
         aux_loss = None
     all_logps = _get_batch_logps(logits, concatenated_batch["concatenated_labels"], average_log_prob=average_log_prob)

@@ -66,6 +66,9 @@ from open_instruct.dpo_utils import (
     simpo_loss,
     wpo_loss,
 )
+from open_instruct.padding_free_collator import (
+    TensorDataCollatorWithFlatteningDPO
+)
 from open_instruct.finetune import encode_sft_example
 from open_instruct.model_utils import push_folder_to_hub, save_with_accelerate
 from open_instruct.utils import (
@@ -391,9 +394,21 @@ class FlatArguments:
     try_launch_beaker_eval_jobs: bool = True
     """Whether to launch beaker evaluation jobs after training"""
     hf_metadata_dataset: Optional[str] = "allenai/tulu-3-evals"
+
     """What dataset to upload the metadata to. If unset, don't upload metadata"""
+    padding_free: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to use padding-free collation via DataCollatorWithFlatteningDPO"
+        },
+    )
+    project_name: str = field(
+        default="open_instruct_internal",
+        metadata={"help": "Project name, e.g for wandb tracking. "},
+    )
 
     def __post_init__(self):
+
         if self.reduce_loss not in ["mean", "sum"]:
             raise ValueError("reduce_loss must be either 'mean' or 'sum'")
         if (
@@ -515,9 +530,10 @@ def get_cache_ref_logprobs(
 def main(args: FlatArguments):
     init_gpu_memory = torch.cuda.mem_get_info()[0]
     # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
-    # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
-    # in the environment
-    args.run_name = f"{args.exp_name}__{args.model_name_or_path.replace('/', '_')}__{args.seed}__{int(time.time())}"
+
+    # Truncate to 64 chars. Required for wandb.
+    args.run_name = args.exp_name[:64]
+
     if args.push_to_hub:
         if args.hf_repo_id is None:  # auto-generate one
             args.hf_repo_id = "open_instruct_dev"
@@ -838,10 +854,21 @@ def main(args: FlatArguments):
         logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # DataLoaders creation:
+    if args.padding_free:
+        accelerator.print("Using padding-free collation")
+        collate_fn = TensorDataCollatorWithFlatteningDPO(
+            return_position_ids=True, return_flash_attn_kwargs=True
+        )
+    else:
+        collate_fn = DataCollatorForSeq2SeqDPO(
+            tokenizer=tokenizer, model=model, padding="longest"
+        )
+
+    # DataLoaders creation:
     train_dataloader = DataLoader(
         train_dataset,
         shuffle=True,
-        collate_fn=DataCollatorForSeq2SeqDPO(tokenizer=tokenizer, model=model, padding="longest"),
+        collate_fn=collate_fn,
         batch_size=args.per_device_train_batch_size,
     )
 
@@ -931,7 +958,7 @@ def main(args: FlatArguments):
         if is_beaker_job():
             experiment_config.update(vars(beaker_config))
         accelerator.init_trackers(
-            "open_instruct_internal",
+            args.project_name,
             experiment_config,
             init_kwargs={
                 "wandb": {
@@ -987,6 +1014,9 @@ def main(args: FlatArguments):
     average_log_prob_loss_types = ["simpo", "dpo_norm"]
     average_log_prob = args.dpo_loss_type in average_log_prob_loss_types
     forward_fn = concatenated_forward if args.concatenated_forward else separate_forward
+
+    if args.padding_free:
+        forward_fn = partial(forward_fn, padding_free=True)
     if args.dpo_loss_type == "dpo" or args.dpo_loss_type == "dpo_norm":
         epoch_cached_reference_chosen_logps, epoch_cached_reference_rejected_logps = get_cache_ref_logprobs(
             model,

@@ -140,6 +140,7 @@ def test_dpo_tune(
     train_file: str = None,
     max_train_steps: int = 2,
     write_data_to_directory: str = None,
+    padding_free: bool = False,
 ):
     from open_instruct.dpo_tune_cache import main, FlatArguments
 
@@ -152,6 +153,7 @@ def test_dpo_tune(
         try_auto_save_to_beaker=False,
         output_dir=None,
         max_train_steps=max_train_steps,
+        padding_free=padding_free,
     )
 
     # - initialize store in transformers patcher
@@ -160,7 +162,15 @@ def test_dpo_tune(
         AutoModelForCausalLM,
         from_pretrained=built_from_pretrained(
             STORE,
-            extra_keys=[],
+            extra_keys=[
+                'attention_mask',
+                'cu_seq_lens_q', 
+                'cu_seq_lens_k', 
+                'max_length_q', 
+                'max_length_k', 
+                'position_ids', 
+                'seq_idx'
+            ],
         ),
     )
 
