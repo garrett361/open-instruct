@@ -373,6 +373,12 @@ class FlatArguments:
             "help": "Whether to clean up all previous checkpoints at the end of the run.",
         },
     )
+    final_lr_ratio: float = field(
+        default=0.1,
+        metadata={
+            "help": "Set the final lr value at the end of training to be final_lr_ratio * learning_rate."
+        },
+    )
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:
             raise ValueError("reduce_loss must be either 'mean' or 'sum'")
@@ -707,11 +713,24 @@ def main(args: FlatArguments, tc: TokenizerConfig):
     num_training_steps_for_scheduler = (
         args.max_train_steps if overrode_max_train_steps else args.max_train_steps * accelerator.num_processes
     )
+
+    # HACK: @goon - final_lr_ratio assumes a linear scheduler, so putting this assert in to sanity
+    # check.
+    assert args.lr_scheduler_type == "linear"
+    assert 1.0 > args.final_lr_ratio >= 0.0
+
+    # HACK: @goon - adjust num_training_steps_for_scheduler so that the final LR is learning_rate *
+    # final_lr_ratio.
+    num_warmup_steps = int(num_training_steps_for_scheduler * args.warmup_ratio)
+    num_training_steps_for_scheduler = (
+        num_training_steps_for_scheduler - args.final_lr_ratio * num_warmup_steps
+    ) / (1 - args.final_lr_ratio)
+
     lr_scheduler = get_scheduler(
         name=args.lr_scheduler_type,
         optimizer=optimizer,
         num_training_steps=num_training_steps_for_scheduler,
-        num_warmup_steps=int(num_training_steps_for_scheduler * args.warmup_ratio),
+        num_warmup_steps=num_warmup_steps,
     )
     # Prepare everything with `accelerator`.
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
