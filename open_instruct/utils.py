@@ -23,10 +23,11 @@ import sys
 import time
 from dataclasses import dataclass
 from typing import Any, List, NewType, Optional, Tuple, Union
+import pandas as pd
 
 import requests
 from accelerate.logging import get_logger
-from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_disk
+from datasets import DatasetDict, concatenate_datasets, load_dataset, load_from_disk, Dataset
 from datasets.builder import DatasetGenerationError
 from dateutil import parser
 from huggingface_hub import HfApi
@@ -245,7 +246,13 @@ def get_datasets(
         for split in splits:
             # if dataset ends with .json or .jsonl, load from file
             if ds.endswith(".json") or ds.endswith(".jsonl"):
-                dataset = load_dataset("json", data_files=ds, split=split)
+                try:
+                    dataset = load_dataset("json", data_files=ds, split=split)
+                except:
+                    # if there are tools / documents in dataset, load_dataset has problems
+                    # - so we will use pandas to do the load
+                    df = pd.read_json(ds,lines=True,orient='records')
+                    dataset = Dataset.from_pandas(df)
             else:
                 try:
                     # Try first if dataset on a Hub repo
@@ -307,6 +314,10 @@ def get_datasets(
 
             # if id not in dataset, create it as ds-{index}
             if "id" not in dataset.column_names:
+                logger.warning(
+                    "Adding id into dataset via add_column, this could be very slow, "
+                    "please consider pre-processing dataset to add column."
+                )
                 id_col = [f"{ds}_{i}" for i in range(len(dataset))]
                 dataset = dataset.add_column("id", id_col)
 
@@ -317,12 +328,20 @@ def get_datasets(
 
             # if add_source_col, add that column
             if add_source_col:
+                logger.warning(
+                    "Adding source into dataset via add_column, this could be very slow, "
+                    "please consider pre-processing dataset to add column."
+                )
                 source_col = [ds] * len(dataset)
                 dataset = dataset.add_column("source", source_col)
 
             # for cols in columns_to_keep, if one is not present, add "None" to the column
             for col in columns_to_keep:
                 if col not in dataset.column_names:
+                    logger.warning(
+                        f"Adding {col} into dataset via add_column, this could be very slow, "
+                        "please consider pre-processing dataset to add column."
+                    )
                     dataset = dataset.add_column(col, [None] * len(dataset))
 
             # add tag to the dataset corresponding to where it was sourced from, for

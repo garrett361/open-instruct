@@ -27,6 +27,7 @@ from datetime import timedelta
 from functools import partial
 from typing import List, Optional, Union
 
+import pandas as pd
 import datasets
 import deepspeed
 import torch
@@ -697,7 +698,7 @@ def main(args: FlatArguments):
             configs=args.dataset_config_name,
             splits=["train"],
             save_data_dir=args.dataset_mix_dir if accelerator.is_main_process else None,
-            columns_to_keep=["messages"],
+            columns_to_keep=["messages","tools","documents"],
         )
     elif args.dataset_mixer_list is not None:
         # mixing datasets via config
@@ -706,19 +707,41 @@ def main(args: FlatArguments):
             configs=args.dataset_config_name,
             splits=["train"],
             save_data_dir=args.dataset_mix_dir if accelerator.is_main_process else None,
-            columns_to_keep=["messages"],
+            columns_to_keep=["messages","tools","documents"],
         )
     else:
         data_files = {}
         dataset_args = {}
         if args.train_file is not None:
             data_files["train"] = args.train_file
-        with accelerator.main_process_first():
-            raw_datasets = load_dataset(
-                args.train_file_type,
-                data_files=data_files,
-                **dataset_args,
-            )
+        with accelerator.main_process_first():            
+            try:
+                raw_datasets = load_dataset(
+                    args.train_file_type,
+                    data_files=data_files,
+                    **dataset_args,
+                )
+            except:
+                # - load_dataset sometimes has strict schema
+                # checks and may fail on tools / documents
+                train_files = args.train_file
+                if isinstance(train_files, str):
+                    train_files = [train_files]
+
+                dfs = []
+                reader = (
+                    partial(pd.read_json , lines=True)
+                    if args.train_file_type == 'json'
+                    else partial(pd.read_parquet, engine='auto')
+                )
+                for file in train_files:
+                    dfs.append(reader(file, orient='records'))
+
+                raw_datasets = datasets.DatasetDict({
+                    'train': datasets.Dataset.from_pandas(pd.concat(dfs))
+                })
+                del df
+                del dfs
 
     # Load pretrained model and tokenizer
     if args.config_name:
