@@ -542,6 +542,7 @@ def masking_strategy_span_search(
     tokenizer, 
     asst_tag: str="<|start_of_role|>assistant<|end_of_role|>",
     end_tag: str="<|end_of_text|>",
+    ignore_label: int = -100,
     **kwargs,
 ):
 
@@ -560,18 +561,18 @@ def masking_strategy_span_search(
     k1 = end_tag.shape[1]
     
     if n >= max(k, k1):
-        # - s: start of mask (from after asst response)
-        # - e: end of mask (fassit tag)
-        s, e = 0, None
+        # - s: start of mask (after last found asst span)
+        s = 0
+        within_asst_span = False # if pointer is within the asst span
         for i in range(k, n):
 
             if match(input_ids[:, i-k:i], asst_tag):
-                labels[:, s:i] = -100 # mask everything from s up to start of asst resp
-                e = i # acts as positional flag that I have found the asst tag
-            elif match(input_ids[:, i-k1:i], end_tag) and e is not None:
-                # - if e is not None means I have just found the assit tag
+                labels[:, s:i] = ignore_label # mask everything from s up to start of asst resp
+                within_asst_span = True # start of asst span
+            elif match(input_ids[:, i-k1:i], end_tag) and within_asst_span:
+                # - if e is not None means I have just found the asst tag
                 s = i + 1 # new start should be after the asst resp
-                e = None # reset, this will be set back when find next asst tag
+                within_asst_span = False # moving out of asst span now
 
     return labels
 
