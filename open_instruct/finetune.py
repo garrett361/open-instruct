@@ -534,23 +534,42 @@ def encode_sft_example(example, tokenizer, max_seq_length):
     """
     messages = example["messages"]
 
-    additional_inputs = {}
+    # this is a "ghost" role that is meant to be added as terminal
+    # message. This serves to trick thinking chat templates that
+    # will only put thinking tags on the last message.
+    ghost_msg = {"role": "user"}
+
+    ct_inputs = {
+        'tokenize': True,
+        'return_tensors': 'pt',
+        'padding': False,
+        'truncation': True,
+        'max_length': max_seq_length,
+    }
+
+    # - get this before any additional args (e.g., tools, docs)
+    ghost_msg_offset = tokenizer.apply_chat_template(
+        conversation=[ghost_msg],
+        **ct_inputs,
+        add_generation_prompt=False,
+    ).shape[1]
+
     for k in ["tools", "documents"]:
         if k in example:
-            additional_inputs[k] = example[k]
+            ct_inputs[k] = example[k]
 
     if len(messages) == 0:
         raise ValueError("messages field is empty.")
+
+    # - for thinking models, the last assistant message will populate
+    #   the thinking tags automatically, no need for any thinking 
+    #   activation flags
     input_ids = tokenizer.apply_chat_template(
         conversation=messages,
-        tokenize=True,
-        return_tensors="pt",
-        padding=False,
-        truncation=True,
-        max_length=max_seq_length,
+        **ct_inputs,
         add_generation_prompt=False,
-        **additional_inputs,
     )
+
     labels = input_ids.clone()
     # mask the non-assistant part for avoiding loss
     for message_idx, message in enumerate(messages):
@@ -559,49 +578,30 @@ def encode_sft_example(example, tokenizer, max_seq_length):
             if message_idx == 0:
                 message_start_idx = 0
             else:
-                message_start_idx = tokenizer.apply_chat_template(
+                msg1 = tokenizer.apply_chat_template(
                     conversation=messages[
                         :message_idx
-                    ],  # here marks the end of the previous messages
-                    tokenize=True,
-                    return_tensors="pt",
-                    padding=False,
-                    truncation=True,
-                    max_length=max_seq_length,
+                    ] + [ghost_msg],  # here marks the end of the previous messages
+                    **ct_inputs,
                     add_generation_prompt=False,
-                    **additional_inputs,
-                ).shape[1]
+                )
+                message_start_idx = msg1.shape[1] - ghost_msg_offset
+
             # next, we calculate the end index of this non-assistant message
-            if (
-                message_idx < len(messages) - 1
-                and messages[message_idx + 1]["role"] == "assistant"
-            ):
-                # for intermediate messages that follow with an assistant message, we need to
-                # set `add_generation_prompt=True` to avoid the assistant generation prefix being included in the loss
-                # (e.g., `<|assistant|>`)
-                message_end_idx = tokenizer.apply_chat_template(
-                    conversation=messages[: message_idx + 1],
-                    tokenize=True,
-                    return_tensors="pt",
-                    padding=False,
-                    truncation=True,
-                    max_length=max_seq_length,
-                    add_generation_prompt=True,
-                    **additional_inputs,
-                ).shape[1]
-            else:
-                # for the last message or the message that doesn't follow with an assistant message,
-                # we don't need to add the assistant generation prefix
-                message_end_idx = tokenizer.apply_chat_template(
-                    conversation=messages[: message_idx + 1],
-                    tokenize=True,
-                    return_tensors="pt",
-                    padding=False,
-                    truncation=True,
-                    max_length=max_seq_length,
-                    add_generation_prompt=False,
-                    **additional_inputs,
-                ).shape[1]
+            # for intermediate messages that follow with an assistant message,
+            # i.e., messages[message_idx + 1]["role"] == "assistant", we need to 
+            # set `add_generation_prompt=True` to avoid the assistant generation prefix being included in the loss
+            # (e.g., `<|assistant|>`)
+
+            msg2 = tokenizer.apply_chat_template(
+                conversation=messages[: message_idx + 1],
+                **ct_inputs,
+                add_generation_prompt=(
+                    (message_idx < len(messages) - 1) and
+                    (messages[message_idx + 1]["role"] == "assistant")
+                ),
+            )
+            message_end_idx = msg2.shape[1]
             # set the label to -100 for the non-assistant part
             labels[:, message_start_idx:message_end_idx] = -100
             if max_seq_length and message_end_idx >= max_seq_length:
