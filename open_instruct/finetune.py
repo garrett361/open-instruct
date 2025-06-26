@@ -27,6 +27,7 @@ from datetime import timedelta
 from functools import partial
 from typing import List, Optional, Union
 
+import pandas as pd
 import datasets
 import deepspeed
 import torch
@@ -701,8 +702,9 @@ def main(args: FlatArguments):
             configs=args.dataset_config_name,
             splits=["train"],
             save_data_dir=args.dataset_mix_dir if accelerator.is_main_process else None,
-            columns_to_keep=["messages"],
+            columns_to_keep=["messages","tools","documents"],
         )
+        print(f"####### Loaded datasets {raw_datasets}")
     elif args.dataset_mixer_list is not None:
         # mixing datasets via config
         raw_datasets = get_datasets(
@@ -710,19 +712,28 @@ def main(args: FlatArguments):
             configs=args.dataset_config_name,
             splits=["train"],
             save_data_dir=args.dataset_mix_dir if accelerator.is_main_process else None,
-            columns_to_keep=["messages"],
+            columns_to_keep=["messages","tools","documents"],
         )
+        print(f"####### Loaded datasets {raw_datasets}")
     else:
         data_files = {}
         dataset_args = {}
         if args.train_file is not None:
             data_files["train"] = args.train_file
-        with accelerator.main_process_first():
-            raw_datasets = load_dataset(
-                args.train_file_type,
-                data_files=data_files,
-                **dataset_args,
-            )
+        with accelerator.main_process_first():            
+            try:
+                raw_datasets = load_dataset(
+                    args.train_file_type,
+                    data_files=data_files,
+                    **dataset_args,
+                )
+            except:
+                if isinstance(args.train_file, list) and len(args.train_files) > 1 or isinstance(args.train_file, dict):
+                    print("Passing a single file when reading with pandas. Please provide a single jsonl file.")
+                else:
+                    df = pd.read_json(args.train_file,lines=True,orient='records')
+                    dataset = datasets.Dataset.from_pandas(df)
+                    raw_datasets = dataset.train_test_split(test_size=1)
 
     # Load pretrained model and tokenizer
     if args.config_name:
@@ -908,6 +919,13 @@ def main(args: FlatArguments):
         # also add bos in the chat template if not already there
         tokenizer.chat_template = "{{ bos_token }}" + tokenizer.chat_template
 
+    # check chat template:
+    if accelerator.is_main_process:
+        accelerator.print(f"\n **** debug_chat_template_tokenization ****")
+        debug_chat_template_tokenization(tokenizer,None,None,None) # naive sample
+        debug_chat_template_tokenization(tokenizer,"Default","Default","Default")
+    # stop_debugging(accelerator)
+    
     if args.use_lora:
         if args.use_qlora:
             model = prepare_model_for_kbit_training(
@@ -1519,5 +1537,6 @@ if __name__ == "__main__":
     parser = ArgumentParserPlus((FlatArguments))
     args = parser.parse()
     if os.environ["RANK"] == "0":
-        print(f"{args=}")
+        print(f"\n*** Input args:")
+        print(json.dumps(vars(args), indent=4))
     main(args)

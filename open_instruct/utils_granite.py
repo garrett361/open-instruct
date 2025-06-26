@@ -21,13 +21,10 @@ def _get_default_messages():
     messages = [
         {"role": "system", "content": "You are a weather assistant that responds with relevant function calls instead of natural language."},
         {"role": "user", "content": "What's the weather like in Bengaluru?"},
-        {"role": "assistant", "content": "get_coordinates(city='Bengaluru')"},
+        {"role": "assistant", "content": "<think> Need to determine coordinates for Bengaluru </think> get_coordinates(city='Bengaluru')"},
         {"role": "system", "content": "Coordinates retrieved successfully. You can now use weather-related functions with latitude and longitude."},
-        {"role": "user", "content": "Can you tell me the current temperature there?"},
-        {"role": "assistant", "content": "get_current_weather(lat=12.97, lon=77.59)"},
-        {"role": "system", "content": "User has requested a multi-day forecast. Switch to forecast mode."},
         {"role": "user", "content": "Actually, I need the 3-day forecast for planning a trip."},
-        {"role": "assistant", "content": "get_weather_forecast(lat=12.97, lon=77.59, days=3)"},
+        {"role": "assistant", "content": " get_weather_forecast(lat=12.97, lon=77.59, days=3)", "thought": "User wants forecast. Need to call forecast API"},
     ]
     return messages
 
@@ -77,19 +74,13 @@ def _get_default_RAG_documents():
         {
             "doc_id": 1,
             "title": "",
-            "text": "From the early 12th century, French builders developed the Gothic style, marked by the use of rib vaults, pointed arches, flying buttresses, and large stained glass windows. It was used mainly in churches and cathedrals, and continued in use until the 16th century in much of Europe. Classic examples of Gothic architecture include Chartres Cathedral and Reims Cathedral in France as well as Salisbury Cathedral in England. Stained glass became a crucial element in the design of churches, which continued to use extensive wall-paintings, now almost all lost.",
+            "text": "Doc 1",
             "source": ""
         },
         {
             "doc_id": 2,
             "title": "",
-            "text": "From long time ago, French builders developed the Gothic style, marked by the use of rib vaults, pointed arches, flying buttresses, and large stained glass windows. It was used mainly in churches and cathedrals, and continued in use until the 16th century in much of Europe. Classic examples of Gothic architecture include Chartres Cathedral and Reims Cathedral in France as well as Salisbury Cathedral in England. Stained glass became a crucial element in the design of churches, which continued to use extensive wall-paintings, now almost all lost.",
-            "source": ""
-        },
-        {
-            "doc_id": 3,
-            "title": "",
-            "text": "From yesterday, French builders developed the Gothic style, marked by the use of rib vaults, pointed arches, flying buttresses, and large stained glass windows. It was used mainly in churches and cathedrals, and continued in use until the 16th century in much of Europe. Classic examples of Gothic architecture include Chartres Cathedral and Reims Cathedral in France as well as Salisbury Cathedral in England. Stained glass became a crucial element in the design of churches, which continued to use extensive wall-paintings, now almost all lost.",
+            "text": "Doc 2",
             "source": ""
         }
     ]
@@ -166,7 +157,7 @@ def debug_chat_template_tokenization(
         print(f"{token_id:6d} -> `{token_str}`")
 
 
-def stop_debugging(accelerator: Accelerator) -> None:
+def stop_debugging(accelerator: Accelerator = None,msg:str=None) -> None:
     """
     Stops debugging and cleans up distributed resources.
     Args:
@@ -174,9 +165,15 @@ def stop_debugging(accelerator: Accelerator) -> None:
     """
     
     # ensure all processes wait until the main process finishes 
-    accelerator.wait_for_everyone()
     
-    # clean up distributed resources
-    accelerator.end_training()
-    accelerator.free_memory()
+    if msg is not None:
+        if accelerator is not None and accelerator.is_local_main_process:
+            accelerator.print(f"\n\n** {msg} **\n")
+        elif accelerator is None:
+            print(f"\n\n** {msg} **\n")
+            
+    if accelerator is not None:
+        accelerator.wait_for_everyone()
+        accelerator.end_training()
+        accelerator.free_memory()
     sys.exit("== STOP DEBUGGING ==")      
