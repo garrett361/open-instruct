@@ -100,24 +100,7 @@
     {%- if (message.role == 'user') or (message.role == 'system' and not loop.first) %}
         {{- '<|start_of_role|>' + message.role + '<|end_of_role|>' + content.val + '<|end_of_text|>\n' }}
     {%- elif message.role == 'assistant' %}
-        {%- set thought = '' %}
-        {%- if message.thought is string %}
-            {%- set thought = message.thought %}
-        {%- else %}
-            {%- if '</think>' in content.val %}
-                {%- set thought = content.val.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}
-                {%- set content.val = content.val.split('</think>')[-1].lstrip('\n') %}
-            {%- endif %}
-        {%- endif %}
-        {%- if loop.index0 > ns.last_query_index %}
-            {%- if loop.last or (not loop.last and thought) %}
-                {{- '<|start_of_role|>' + message.role + '<|end_of_role|>' + '\n<think>\n' + thought.strip('\n') + '\n</think>\n\n' + content.val.lstrip('\n') }}
-            {%- else %}
-                {{- '<|start_of_role|>' + message.role + '<|end_of_role|>' + content.val }}
-            {%- endif %}
-        {%- else %}
-            {{- '<|start_of_role|>' + message.role + '<|end_of_role|>' + content.val }}
-        {%- endif %}
+        {{- '<|start_of_role|>' + message.role + '<|end_of_role|>' + content.val }}
         {%- if message.tool_calls %}
             {%- for tool_call in message.tool_calls %}
                 {%- if (loop.first and content.val) or (not loop.first) %}
@@ -152,7 +135,4 @@
 {%- endfor %}
 {%- if add_generation_prompt %}
     {{- '<|start_of_role|>assistant<|end_of_role|>' }}
-    {%- if thinking is defined and thinking is false %}
-        {{- '<think>\n\n</think>\n\n' }}
-    {%- endif %}
 {%- endif %}
