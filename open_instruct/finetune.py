@@ -116,6 +116,7 @@ class FlatArguments:
                 f"The name of the chat template to use. "
                 f"You can choose one of our pre-defined templates: {', '.join(CHAT_TEMPLATES.keys())}."
                 f"Or, you can provide a tokenizer name or path here and we will apply its chat template."
+                f"Or, you can provide a path here to the chat template jinja file."
             )
         },
     )
@@ -443,6 +444,13 @@ class FlatArguments:
     masking_strategy: str = "open_instruct"
     """Set the label masking strategy"""
 
+    # List of special tokens to be added to tokenizer, eg:
+    add_special_tokens: Optional[List[str]] = field(
+        default=None,
+        metadata={"help": "List of additional special tokens to add to the tokenizer"},
+    )
+
+
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:
             raise ValueError("reduce_loss must be either 'mean' or 'sum'")
@@ -693,6 +701,16 @@ def encode_sft_example(
         "labels": labels.flatten(),
         "attention_mask": attention_mask.flatten(),
     }
+
+def add_special_chat_tokens(tokenizer, add_special_tokens: List):
+    existing_special_tokens = tokenizer.special_tokens_map.get("additional_special_tokens", [])
+    new_special_tokens = [t for t in add_special_tokens if t not in existing_special_tokens]
+    if new_special_tokens:  
+        all_special_tokens = existing_special_tokens + new_special_tokens
+        tokenizer.add_special_tokens({"additional_special_tokens": all_special_tokens})
+            
+    return tokenizer
+    
 
 
 def main(args: FlatArguments):
@@ -962,6 +980,10 @@ def main(args: FlatArguments):
             "We detected no padding token but add_special_tokens did not add one."
         )
 
+    # add special tokens if they are provided:
+    if args.add_special_tokens is not None:
+        tokenizer = add_special_chat_tokens(tokenizer,args.add_special_tokens)
+
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
     # on a small vocab and want a smaller embedding size, remove this test.
     # gather deepspeed to get "real" embedding size
@@ -984,9 +1006,13 @@ def main(args: FlatArguments):
         tokenizer.chat_template = CHAT_TEMPLATES[args.chat_template_name]
     else:
         try:
-            tokenizer.chat_template = AutoTokenizer.from_pretrained(
-                args.chat_template_name
-            ).chat_template
+            if args.chat_template_name.endswith('.jinja2'):
+                with open(args.chat_template_name) as f:
+                    tokenizer.chat_template = f.read()
+            else:
+                tokenizer.chat_template = AutoTokenizer.from_pretrained(
+                    args.chat_template_name
+                ).chat_template
         except Exception:
             raise ValueError(
                 f"Could not find chat template for {args.chat_template_name}."
@@ -1063,8 +1089,9 @@ def main(args: FlatArguments):
         )
 
     # Log a few random samples from the training set:
-    for index in random.sample(range(len(train_dataset)), 3):
-        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+    if accelerator.is_main_process:
+        for index in random.sample(range(len(train_dataset)), 3):
+            logger.info(f"\nSample {index:,} of the training set: {train_dataset[index]}.")
 
     # DataLoaders creation:
     if args.padding_free:
@@ -1174,9 +1201,10 @@ def main(args: FlatArguments):
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )
-    accelerator.print(f"{model=}")
-    accelerator.print(f"{accelerator.state.fsdp_plugin=}")
-    accelerator.print(f"{args=}")
+    if accelerator.is_main_process:
+        accelerator.print(f"\n== {model=}")
+        accelerator.print(f"\n== {accelerator.state.fsdp_plugin=}")
+        accelerator.print(f"\n== {args=}")
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(
@@ -1612,5 +1640,6 @@ if __name__ == "__main__":
     parser = ArgumentParserPlus((FlatArguments))
     args = parser.parse()
     if os.environ["RANK"] == "0":
-        print(f"{args=}")
+        print(f"\n*** Input args:")
+        print(json.dumps(vars(args), indent=4))
     main(args)
