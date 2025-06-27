@@ -1,98 +1,30 @@
 import pytest
 
 from open_instruct.finetune import masking_strategy_span_search
-from open_instruct.dataset_processor import CHAT_TEMPLATES
 from transformers import AutoTokenizer
 from typing import List
 
+MSG_SYSTEM = { 'role': 'system', 'content': 'This is an system.' }
+MSG_USER_1 = { 'role': 'user', 'content': 'This is an instruction.' }
+MSG_USER_2 = { 'role': 'user', 'content': 'This is another instruction.' }
+MSG_ASST_1 = { 'role': 'assistant', 'content': 'This is a response.' }
+MSG_ASST_2 = { 'role': 'assistant', 'content': 'This is another response.' }
+MSG_ASST_THINK_1 = { 'role': 'assistant', 'content': '<think> I am thinking. </think> This is a response.' }
+MSG_ASST_THINK_2 = { 'role': 'assistant', 'content': '<think> I am thinking again. </think> This is another response.' }
+MSG_TOOL = { 'role': 'tool', 'content': 'this is a response from tool' }
+
 EXAMPLES = {
     'single-turn': {
-        'messages': [
-            {
-                'role': 'user',
-                'content': 'This is an instruction.'
-            },
-            {
-                'role': 'assistant',
-                'content': 'This is a response.'
-            },
-        ]
+        'messages': [ MSG_USER_1, MSG_ASST_1 ]
     },
     'multi-turn': {
-        'messages': [
-            {
-                'role': 'user',
-                'content': 'This is an system.'
-            },
-            {
-                'role': 'user',
-                'content': 'This is an instruction.'
-            },
-            {
-                'role': 'assistant',
-                'content': 'This is a response.'
-            },
-            {
-                'role': 'user',
-                'content': 'This is another instruction.'
-            },
-            {
-                'role': 'assistant',
-                'content': 'This is another response.'
-            },
-        ]
+        'messages': [ MSG_SYSTEM, MSG_USER_1, MSG_ASST_1, MSG_USER_2, MSG_ASST_2 ]
     },
     'multi-turn-with-think': {
-        'messages': [
-            {
-                'role': 'user',
-                'content': 'This is an system.'
-            },
-            {
-                'role': 'user',
-                'content': 'This is a instruction.'
-            },
-            {
-                'role': 'assistant',
-                'content': '<think> I am thinking. </think> This is a response.'
-            },
-            {
-                'role': 'user',
-                'content': 'This is another instruction.'
-            },
-            {
-                'role': 'assistant',
-                'content': '<think> I am thinking again. </think> This is another response.'
-            },
-        ]
+        'messages': [ MSG_SYSTEM, MSG_USER_1, MSG_ASST_THINK_1, MSG_USER_2, MSG_ASST_THINK_2 ]
     },
     'multi-turn-with-think-tools': {
-        'messages': [
-            {
-                'role': 'user',
-                'content': 'This is an system.'
-            },
-            {
-                'role': 'user',
-                'content': 'This is a instruction.'
-            },
-            {
-                'role': 'assistant',
-                'content': '<think> I am thinking. </think> Need to make a tool call.'
-            },
-            {
-                'role': 'tool',
-                'content': 'this is a response from tool'
-            },
-            {
-                'role': 'user',
-                'content': 'This is another instruction.'
-            },
-            {
-                'role': 'assistant',
-                'content': '<think> I am thinking again. </think> This is another response.'
-            },
-        ],
+        'messages': [ MSG_SYSTEM, MSG_USER_1, MSG_ASST_THINK_1, MSG_TOOL, MSG_USER_2, MSG_ASST_THINK_2 ],
         'tools': [
             {'type': 'function'},
         ]
@@ -109,7 +41,7 @@ ANSWERS = {
         'single-turn': [[0, 12]],
         'multi-turn': [[0, 22], [30, 42]],
         'multi-turn-with-think': [[0, 22], [30, 42]],
-        'multi-turn-with-think-tools': [[0, 110], [120, 147]],
+        'multi-turn-with-think-tools': [[0, 105], [113, 140]],
     }
 }
 
