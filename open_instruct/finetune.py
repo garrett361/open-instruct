@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 from functools import partial
-from typing import List, Optional, Union
+from typing import List, Dict, Optional, Union
 
 import pandas as pd
 import datasets
@@ -438,6 +438,11 @@ class FlatArguments:
     skip_final_ckpt: bool = False
     """Skip the final ckpt with accelerate. Intended for testing."""
 
+    # TODO: consider have the same key be able to also include kwargs
+    # e.g., masking_strategy="strategy:span_search,asst_tag:<|start_of_role|>assistant<|end_of_role|>"
+    masking_strategy: str = "open_instruct"
+    """Set the label masking strategy"""
+
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:
             raise ValueError("reduce_loss must be either 'mean' or 'sum'")
@@ -526,34 +531,61 @@ class FlatArguments:
         else:
             self.additional_model_arguments = {}
 
+# Span label masking strategy
+# - search spans asst_tag ... end_tag
+# - all such spans are left unmasked
+# - if an asst_tage is undetected due to tokenization issues
+#   then a span can be erronously masked
+# - to avoid this, use tags that are guarded by special tokens
+def masking_strategy_span_search(
+    messages: List,
+    input_ids: torch.tensor,
+    tokenizer, 
+    asst_tag: str="<|start_of_role|>assistant<|end_of_role|>",
+    end_tag: str="<|end_of_text|>",
+    ignore_label: int = -100,
+    **kwargs,
+):
 
-def encode_sft_example(example, tokenizer, max_seq_length):
-    """
-    This function encodes a single example into a format that can be used for sft training.
-    Here, we assume each example has a 'messages' field. Each message in it is a dict with 'role' and 'content' fields.
-    We use the `apply_chat_template` function from the tokenizer to tokenize the messages and prepare the input and label tensors.
-    """
-    messages = example["messages"]
+    # some prep
+    match = lambda x,y: torch.all(x == y)
+    asst_tag = tokenizer.encode(asst_tag)
+    end_tag = tokenizer.encode(end_tag)
+    asst_tag = torch.tensor([asst_tag])
+    end_tag = torch.tensor([end_tag])
 
-    additional_inputs = {}
-    for k in ["tools", "documents"]:
-        if k in example:
-            additional_inputs[k] = example[k]
-
-    if len(messages) == 0:
-        raise ValueError("messages field is empty.")
-    input_ids = tokenizer.apply_chat_template(
-        conversation=messages,
-        tokenize=True,
-        return_tensors="pt",
-        padding=False,
-        truncation=True,
-        max_length=max_seq_length,
-        add_generation_prompt=False,
-        **additional_inputs,
-    )
+    # - prep
     labels = input_ids.clone()
-    # mask the non-assistant part for avoiding loss
+
+    # - lengths
+    k, n = asst_tag.shape[1], labels.shape[1]
+    k1 = end_tag.shape[1]
+    
+    if n >= max(k, k1):
+        # - s: start of mask (after last found asst span)
+        s = 0
+        within_asst_span = False # if pointer is within the asst span
+        for i in range(k, n):
+
+            if match(input_ids[:, i-k:i], asst_tag):
+                labels[:, s:i] = ignore_label # mask everything from s up to start of asst resp
+                within_asst_span = True # start of asst span
+            elif match(input_ids[:, i-k1:i], end_tag) and within_asst_span:
+                # - if e is not None means I have just found the asst tag
+                s = i + 1 # new start should be after the asst resp
+                within_asst_span = False # moving out of asst span now
+
+    return labels
+
+def masking_strategy_open_instruct(
+    messages: List,
+    input_ids: torch.tensor,
+    tokenizer, 
+    additional_inputs: Dict = None,
+    max_seq_length: int = 4096,
+):
+    labels = input_ids.clone()
+
     for message_idx, message in enumerate(messages):
         if message["role"] != "assistant":
             # we calculate the start index of this non-assistant message
@@ -607,7 +639,55 @@ def encode_sft_example(example, tokenizer, max_seq_length):
             labels[:, message_start_idx:message_end_idx] = -100
             if max_seq_length and message_end_idx >= max_seq_length:
                 break
+
+    return labels
+
+MASKING_STRATEGIES = {
+    'open_instruct': masking_strategy_open_instruct,
+    'span_search': masking_strategy_span_search,
+}
+
+def encode_sft_example(
+    example, tokenizer, max_seq_length,
+    masking_strategy: str="open_instruct",
+    masking_strategy_kwargs: Dict = None,
+):
+    """
+    This function encodes a single example into a format that can be used for sft training.
+    Here, we assume each example has a 'messages' field. Each message in it is a dict with 'role' and 'content' fields.
+    We use the `apply_chat_template` function from the tokenizer to tokenize the messages and prepare the input and label tensors.
+    """
+
+    if not masking_strategy_kwargs:
+        masking_strategy_kwargs = {}
+
+    messages = example["messages"]
+
+    additional_inputs = {}
+    for k in ["tools", "documents"]:
+        if k in example:
+            additional_inputs[k] = example[k]
+
+    if len(messages) == 0:
+        raise ValueError("messages field is empty.")
+    input_ids = tokenizer.apply_chat_template(
+        conversation=messages,
+        tokenize=True,
+        return_tensors="pt",
+        padding=False,
+        truncation=True,
+        max_length=max_seq_length,
+        add_generation_prompt=False,
+        **additional_inputs,
+    )
     attention_mask = torch.ones_like(input_ids)
+
+    labels = MASKING_STRATEGIES[masking_strategy](
+        messages, input_ids, tokenizer,
+        **masking_strategy_kwargs,
+        additional_inputs=additional_inputs,
+    )
+
     return {
         "input_ids": input_ids.flatten(),
         "labels": labels.flatten(),
