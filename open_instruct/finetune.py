@@ -367,6 +367,7 @@ class FlatArguments:
         default=False,
         metadata={"help": "Whether to use padding-free collation via TensorDataCollatorWithFlattening"},
     )
+
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:
             raise ValueError("reduce_loss must be either 'mean' or 'sum'")
