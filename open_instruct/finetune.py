@@ -544,7 +544,7 @@ def main(args: FlatArguments, tc: TokenizerConfig):
 
     if args.dataset_mixer is not None:
         args.dataset_mixer_list = [item for pair in args.dataset_mixer.items() for item in pair]
-    with accelerator.main_process_first():
+    with accelerator.local_main_process_first():
         transform_fn_args = [
             {"max_seq_length": args.max_seq_length},
             {},
