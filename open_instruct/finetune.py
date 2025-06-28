@@ -379,6 +379,10 @@ class FlatArguments:
         },
     )
     add_seed_and_date_to_exp_name: bool = True
+    additional_model_arguments: Optional[list[str]] = field(
+        default=None,
+        metadata={"help": "A list of key:val to be passed as additional model args."},
+    )
 
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:
@@ -398,6 +402,24 @@ class FlatArguments:
                 raise NotImplementedError("final_lr_ratio only currently implemented for linear schedulers")
             if not (1.0 >= self.final_lr_ratio >= 0.0):
                 raise ValueError(f"final_lr_ratio must be between 0 and 1, not {self.final_lr_ratio=}")
+
+        if self.additional_model_arguments is not None:
+            import re
+
+            def maybe_convert_(x):
+                return (
+                    float(x)
+                    if x.count(".") == 1 and re.sub(r"^-?.*\.", "", x, count=1).isnumeric()
+                    else (int(x) if x.count(".") == 0 and re.sub("^-?", "", x).isnumeric() else x)
+                )
+
+            try:
+                self.additional_model_arguments = [x.split(":") for x in self.additional_model_arguments]
+                self.additional_model_arguments = {k: maybe_convert_(v) for k, v in self.additional_model_arguments}
+            except IndexError:
+                raise ValueError("Malformed additional model arguments. Should be space-delimited list of key:val.")
+        else:
+            self.additional_model_arguments = {}
 
 
 def main(args: FlatArguments, tc: TokenizerConfig):
@@ -549,12 +571,14 @@ def main(args: FlatArguments, tc: TokenizerConfig):
             args.config_name,
             revision=args.model_revision,
             trust_remote_code=tc.trust_remote_code,
+            **args.additional_model_arguments,
         )
     elif args.model_name_or_path:
         config = AutoConfig.from_pretrained(
             args.model_name_or_path,
             revision=args.model_revision,
             trust_remote_code=tc.trust_remote_code,
+            **args.additional_model_arguments,
         )
     else:
         raise ValueError(
