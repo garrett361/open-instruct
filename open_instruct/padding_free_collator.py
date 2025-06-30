@@ -21,17 +21,6 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
     return_seq_idx: bool = True
     separator_id: bool = -100
 
-    def __init__(
-        self,
-        *args,
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        warnings.warn(
-            "Using `DataCollatorWithFlattening` will flatten the entire mini batch into single long sequence."
-            "Make sure your attention computation is able to handle it!"
-        )
-
     def __call__(self, features, return_tensors=None, separator_id=None):
         if return_tensors is None:
             return_tensors = self.return_tensors
