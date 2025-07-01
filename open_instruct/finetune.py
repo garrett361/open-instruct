@@ -393,6 +393,8 @@ class FlatArguments:
         default_factory=dict,
         metadata={"help": "A dictionary of additional model args used to construct the model."},
     )
+    sync_each_batch: bool = False
+    """Optionaly sync grads every batch when using grad accumulation. Can significantly reduce memory costs."""
 
     def __post_init__(self):
         if self.reduce_loss not in ["mean", "sum"]:
@@ -444,7 +446,7 @@ def main(args: FlatArguments, tc: TokenizerConfig):
         kwargs_handlers=[timeout_kwargs],
         gradient_accumulation_plugin=GradientAccumulationPlugin(
             num_steps=args.gradient_accumulation_steps,
-            sync_each_batch=True,
+            sync_each_batch=args.sync_each_batch,
         ),
     )
 
