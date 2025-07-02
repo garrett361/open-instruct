@@ -46,7 +46,7 @@ import json
 import multiprocessing
 import os
 from dataclasses import asdict, dataclass, field
-from functools import cached_property
+from functools import cached_property, partial
 from typing import Any, Dict, List, Literal, Optional
 
 import torch
@@ -123,6 +123,10 @@ def get_files_hash_if_exists(
 ) -> List[str]:
     return [get_file_hash(model_name_or_path, revision, filename, repo_type) for filename in filenames]
 
+def is_file_exts(name: str, exts: List[str]):
+    return any(name.endswith(e) for e in exts)
+
+is_jinja_file = partial(is_file_exts, exts=['.jinja', 'jinja2'])
 
 # Performance tuning. Some rough numbers:
 APPLY_CHAT_TEMPLATE_EXAMPLE_PER_SECOND_PER_CPU = 400
@@ -437,7 +441,7 @@ def get_tokenizer_tulu_v1(tc: "TokenizerConfig"):
         tokenizer.chat_template = CHAT_TEMPLATES[tc.chat_template_name]
     else:
         try:
-            if tc.chat_template_name.endswith('.jinja2'):
+            if is_jinja_file(tc.chat_template_name):
                 with open(tc.chat_template_name) as f:
                     tokenizer.chat_template = f.read()
             else:
@@ -512,7 +516,7 @@ def get_tokenizer_tulu_v2_1(tc: "TokenizerConfig"):
         tokenizer.chat_template = CHAT_TEMPLATES[tc.chat_template_name]
     else:
         try:
-            if tc.chat_template_name.endswith('.jinja2'):
+            if is_jinja_file(tc.chat_template_name):
                 with open(tc.chat_template_name) as f:
                     tokenizer.chat_template = f.read()
             else:
@@ -593,7 +597,7 @@ def get_tokenizer_tulu_v2_2(tc: "TokenizerConfig"):
         tokenizer.chat_template = CHAT_TEMPLATES[tc.chat_template_name]
     else:
         try:
-            if tc.chat_template_name.endswith('.jinja2'):
+            if is_jinja_file(tc.chat_template_name):
                 with open(tc.chat_template_name) as f:
                     tokenizer.chat_template = f.read()
             else:
@@ -838,7 +842,13 @@ def sft_tulu_tokenize_and_truncate_v1(row: Dict[str, Any], tokenizer: PreTrained
     return row
 
 
-def sft_span_seach_mask_out(row: Dict[str, Any], tokenizer: PreTrainedTokenizer, max_seq_length: int):
+def sft_span_seach_mask_out(
+    row: Dict[str, Any], tokenizer: PreTrainedTokenizer, max_seq_length: int,
+    asst_tag: str="<|start_of_role|>assistant<|end_of_role|>",
+    end_tag: str="<|end_of_text|>",
+    ignore_label: int = -100,
+):
+    """This function encodes a single example into a format that can be used for sft training (similar to sft_tulu_tokenize_and_truncate_v1). Instead of performing label masking iteratively, this function performs masking via span search and can handle complex chat templates with thinking."""
 
     # Span label masking strategy
     # - search spans asst_tag ... end_tag
@@ -849,35 +859,32 @@ def sft_span_seach_mask_out(row: Dict[str, Any], tokenizer: PreTrainedTokenizer,
     def masking_strategy_span_search(
         input_ids: torch.tensor,
         tokenizer, 
-        asst_tag: str="<|start_of_role|>assistant<|end_of_role|>",
-        end_tag: str="<|end_of_text|>",
-        ignore_label: int = -100,
     ):
 
         # some prep
         match = lambda x,y: torch.all(x == y)
-        asst_tag = tokenizer.encode(asst_tag)
-        end_tag = tokenizer.encode(end_tag)
-        asst_tag = torch.tensor([asst_tag])
-        end_tag = torch.tensor([end_tag])
+        _asst_tag = tokenizer.encode(asst_tag)
+        _end_tag = tokenizer.encode(end_tag)
+        _asst_tag = torch.tensor([_asst_tag])
+        _end_tag = torch.tensor([_end_tag])
 
         # - prep
         labels = input_ids.clone()
 
         # - lengths
-        k, n = asst_tag.shape[1], labels.shape[1]
-        k1 = end_tag.shape[1]
+        num_tokens_asst, num_tokens = _asst_tag.shape[1], labels.shape[1]
+        num_tokens_end = _end_tag.shape[1]
         
-        if n >= max(k, k1):
+        if num_tokens >= max(num_tokens_asst, num_tokens_end):
             # - s: start of mask (after last found asst span)
             s = 0
             within_asst_span = False # if pointer is within the asst span
-            for i in range(k, n):
+            for i in range(num_tokens_asst, num_tokens):
 
-                if match(input_ids[:, i-k:i], asst_tag):
+                if match(input_ids[:, i-num_tokens_asst:i], _asst_tag):
                     labels[:, s:i] = ignore_label # mask everything from s up to start of asst resp
                     within_asst_span = True # start of asst span
-                elif match(input_ids[:, i-k1:i], end_tag) and within_asst_span:
+                elif match(input_ids[:, i-num_tokens_end:i], _end_tag) and within_asst_span:
                     # - if e is not None means I have just found the asst tag
                     s = i + 1 # new start should be after the asst resp
                     within_asst_span = False # moving out of asst span now
