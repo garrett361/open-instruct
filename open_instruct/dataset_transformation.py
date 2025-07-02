@@ -838,6 +838,79 @@ def sft_tulu_tokenize_and_truncate_v1(row: Dict[str, Any], tokenizer: PreTrained
     return row
 
 
+def sft_span_seach_mask_out(row: Dict[str, Any], tokenizer: PreTrainedTokenizer, max_seq_length: int):
+
+    # Span label masking strategy
+    # - search spans asst_tag ... end_tag
+    # - all such spans are left unmasked
+    # - if an asst_tage is undetected due to tokenization issues
+    #   then a span can be erronously masked
+    # - to avoid this, use tags that are guarded by special tokens
+    def masking_strategy_span_search(
+        input_ids: torch.tensor,
+        tokenizer, 
+        asst_tag: str="<|start_of_role|>assistant<|end_of_role|>",
+        end_tag: str="<|end_of_text|>",
+        ignore_label: int = -100,
+    ):
+
+        # some prep
+        match = lambda x,y: torch.all(x == y)
+        asst_tag = tokenizer.encode(asst_tag)
+        end_tag = tokenizer.encode(end_tag)
+        asst_tag = torch.tensor([asst_tag])
+        end_tag = torch.tensor([end_tag])
+
+        # - prep
+        labels = input_ids.clone()
+
+        # - lengths
+        k, n = asst_tag.shape[1], labels.shape[1]
+        k1 = end_tag.shape[1]
+        
+        if n >= max(k, k1):
+            # - s: start of mask (after last found asst span)
+            s = 0
+            within_asst_span = False # if pointer is within the asst span
+            for i in range(k, n):
+
+                if match(input_ids[:, i-k:i], asst_tag):
+                    labels[:, s:i] = ignore_label # mask everything from s up to start of asst resp
+                    within_asst_span = True # start of asst span
+                elif match(input_ids[:, i-k1:i], end_tag) and within_asst_span:
+                    # - if e is not None means I have just found the asst tag
+                    s = i + 1 # new start should be after the asst resp
+                    within_asst_span = False # moving out of asst span now
+
+        return labels
+
+    messages = row["messages"]
+    additional_inputs = {}
+    for k in ["tools", "documents"]:
+        if k in row:
+            additional_inputs[k] = row[k]
+
+    if len(messages) == 0:
+        raise ValueError("messages field is empty.")
+    input_ids = tokenizer.apply_chat_template(
+        conversation=messages,
+        tokenize=True,
+        return_tensors="pt",
+        padding=False,
+        truncation=True,
+        max_length=max_seq_length,
+        add_generation_prompt=False,
+        **additional_inputs,
+    )
+    attention_mask = torch.ones_like(input_ids)
+    labels = masking_strategy_span_search(
+        input_ids, tokenizer,
+    )
+    row[INPUT_IDS_KEY] = input_ids.flatten()
+    row[LABELS_KEY] = labels.flatten()
+    row[ATTENTION_MASK_KEY] = attention_mask.flatten()
+    return row
+
 def last_turn_tulu_tokenize_and_truncate_v1(row: Dict[str, Any], tokenizer: PreTrainedTokenizer, max_seq_length: int):
     """taken directly from https://github.com/allenai/open-instruct/blob/ba11286e5b9eb00d4ce5b40ef4cac1389888416a/open_instruct/finetune.py#L385"""
     messages = row["messages"]
@@ -1116,6 +1189,7 @@ TRANSFORM_FNS = {
     "sft_tokenize_mask_out_prompt_v1": (sft_tokenize_mask_out_prompt_v1, "map"),
     "sft_filter_v1": (sft_filter_v1, "filter"),
     "sft_tulu_tokenize_and_truncate_v1": (sft_tulu_tokenize_and_truncate_v1, "map"),
+    "sft_span_seach_mask_out": (sft_span_seach_mask_out, "map"),
     "sft_tulu_filter_v1": (sft_tulu_filter_v1, "filter"),
     "preference_tokenize_v1": (preference_tokenize_v1, "map"),
     "preference_filter_v1": (preference_filter_v1, "filter"),
