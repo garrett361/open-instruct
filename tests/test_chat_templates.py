@@ -118,5 +118,34 @@ def test_masking_strategy_span_search(
 
     
 
+@pytest.mark.parametrize(
+    "tokenizer_name,chat_template_name", 
+    [
+        ('Qwen/Qwen3-8B', 'thinking')
+    ]
+)
+def test_masking_strategy_raises(
+    tokenizer_name: str,
+    chat_template_name: str,
+):
+    
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
+    # patch the chat template
+    tokenizer.chat_template = CHAT_TEMPLATE_EXAMPLES[chat_template_name]
+
+    # this simulates the case where a user set the wrong
+    # tags in the function that does not match the chat-template
+    with pytest.raises(ValueError):
+        sft_span_seach_mask_out(
+            {
+                'messages': [{
+                    'role': 'user', 'content': ''
+                }]
+            },
+            tokenizer,
+            MAX_SEQ_LENGTH,
+            asst_tag='supersupersuperlongtag',
+            end_tag='supersupersuperlongtag',
+        )
 

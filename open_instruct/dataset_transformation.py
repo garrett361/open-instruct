@@ -888,6 +888,12 @@ def sft_span_seach_mask_out(
                     # - if e is not None means I have just found the asst tag
                     s = i + 1 # new start should be after the asst resp
                     within_asst_span = False # moving out of asst span now
+        else:
+            raise ValueError(
+                f"asst_tag has {num_tokens_asst} tokens, and end_tag has {num_tokens_end} "
+                "tokens, whereas the example has {num_tokens} tokens. Either "
+                "the example is invalid or wrong tags have been passed."
+            )
 
         return labels
 
