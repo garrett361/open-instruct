@@ -848,7 +848,10 @@ def sft_span_seach_mask_out(
     end_tag: str="<|end_of_text|>",
     ignore_label: int = -100,
 ):
-    """This function encodes a single example into a format that can be used for sft training (similar to sft_tulu_tokenize_and_truncate_v1). Instead of performing label masking iteratively, this function performs masking via span search and can handle complex chat templates with thinking."""
+    """This function encodes a single example into a format that 
+    can be used for sft training (similar to sft_tulu_tokenize_and_truncate_v1). 
+    Instead of performing label masking iteratively, this function performs 
+    masking via span search and can handle complex chat templates with thinking."""
 
     # Span label masking strategy
     # - search spans asst_tag ... end_tag
