@@ -100,7 +100,7 @@ def load_dataset(
             'train': Dataset.from_pandas(pd.concat(dfs))
         })
         del df
-        del df
+        del dfs
         return raw_datasets
 
 # ----------------------------------------------------------------------------
