@@ -96,10 +96,7 @@ def load_dataset(
         for file in train_files:
             dfs.append(reader(file, orient='records'))
 
-        raw_datasets = DatasetDict({
-            'train': Dataset.from_pandas(pd.concat(dfs))
-        })
-        del df
+        raw_datasets = Dataset.from_pandas(pd.concat(dfs))
         del dfs
         return raw_datasets
 
