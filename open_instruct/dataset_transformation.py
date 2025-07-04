@@ -84,10 +84,13 @@ def load_dataset(
         if isinstance(train_files, str):
             train_files = [train_files]
 
+        file_type = train_files[0].split('.')[-1]
+        assert file_type in {'json', 'jsonl', 'parquet'}
+
         dfs = []
         reader = (
             partial(pd.read_json , lines=True)
-            if args.train_file_type == 'json'
+            if file_type in {'json', 'jsonl'}
             else partial(pd.read_parquet, engine='auto')
         )
         for file in train_files:
