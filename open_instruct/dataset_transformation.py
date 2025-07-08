@@ -68,12 +68,12 @@ from transformers.utils.hub import _CACHED_NO_EXIST, TRANSFORMERS_CACHE, extract
 from open_instruct.utils import hf_whoami
 
 # MOVE THIS SOMEWHERE
-from datasets import load_dataset as lds
 def load_dataset(
     *args, **kwargs
 ):
-    import pandas as pd
+    from datasets import load_dataset as lds
     from datasets import DatasetDict
+    import pandas as pd
 
     try:
         return lds(*args, **kwargs)
@@ -97,7 +97,6 @@ def load_dataset(
             dfs.append(reader(file, orient='records'))
 
         raw_datasets = Dataset.from_pandas(pd.concat(dfs))
-        del dfs
         return raw_datasets
 
 # ----------------------------------------------------------------------------
