@@ -15,7 +15,7 @@ from transformers import (
 # HACK for being able to load the collator without needing to install open-instruct
 open_instruct_dir = Path(__file__).parent.parent.absolute()
 sys.path.append(open_instruct_dir)
-from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening
+from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening, TensorDataCollatorWithFlatteningDPO
 
 MODEL_CLASSES = {"bamba": BambaForCausalLM, "llama": LlamaForCausalLM}
 MODEL_CFGS = {
@@ -125,3 +125,28 @@ class TestPaddingFree:
         torch.testing.assert_close(outputs.loss, pf_outputs.loss)
         with pytest.raises(AssertionError, match="Mismatched elements:"):
             torch.testing.assert_close(pf_logits, incorrect_pf_logits)
+
+    def test_padding_free_dpo(self) -> None:
+        inputs = torch.randint(256, size=(self.batch_size, self.seqlen), device="cuda")
+
+        dataset = {
+            idx: {"rejected_input_ids": example, "chosen_input_ids": example} for idx, example in enumerate(inputs)
+        }
+        collate_fn = TensorDataCollatorWithFlatteningDPO()
+        train_dataloader = DataLoader(dataset, shuffle=False, collate_fn=collate_fn, batch_size=self.batch_size)
+        pf_batch = next(iter(train_dataloader))
+        for prefix in ("chosen_", "rejected_"):
+            for suffix in (
+                "input_ids",
+                "labels",
+                "cu_seq_lens_q",
+                "cu_seq_lens_k",
+                "max_length_q",
+                "max_length_k",
+                "position_ids",
+                "seq_idx",
+            ):
+                key = prefix + suffix
+                assert key in pf_batch
+                if suffix in {"input_ids", "labels"}:
+                    assert pf_batch[key].shape[0] == 1

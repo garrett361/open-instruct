@@ -696,9 +696,7 @@ def main(args: FlatArguments, tc: TokenizerConfig):
     # DataLoaders creation:
     if args.padding_free:
         accelerator.print("Using padding-free collation")
-        collate_fn = TensorDataCollatorWithFlatteningDPO(
-            return_position_ids=True, return_flash_attn_kwargs=True
-        )
+        collate_fn = TensorDataCollatorWithFlatteningDPO()
     else:
         collate_fn = DataCollatorForSeq2SeqDPO(
             tokenizer=tokenizer, model=model, padding="longest"

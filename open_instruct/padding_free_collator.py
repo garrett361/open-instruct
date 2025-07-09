@@ -6,8 +6,7 @@ from transformers import DefaultDataCollator
 from typing import Dict, Union, List
 
 
-@dataclass
-class TensorDataCollatorWithFlattening(DefaultDataCollator):
+class TensorDataCollatorWithFlattening:
     """
     Data collator used for padding free approach. Does the following:
 
@@ -18,31 +17,22 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
 
     def __init__(
         self,
-        *args,
         return_flash_attn_kwargs=True,
         return_position_ids=True,
         return_seq_idx=True,
         separator_id=-100,
-        **kwargs,
     ):
-        super().__init__(*args, **kwargs)
         self.return_flash_attn_kwargs = return_flash_attn_kwargs
         self.return_position_ids = return_position_ids
         self.return_seq_idx = return_seq_idx
         self.separator_id = separator_id
         warnings.warn(
             "Using `DataCollatorWithFlattening` will flatten the entire mini batch into single long sequence."
-            "Make sure your attention computation is able to handle it!"
+            "Make sure your attention computation is able to handle it!",
+            stacklevel=1,
         )
 
-    def __call__(self, features, return_tensors=None, separator_id=None):
-        if return_tensors is None:
-            return_tensors = self.return_tensors
-        if separator_id is None:
-            separator_id = self.separator_id
-        assert self.return_flash_attn_kwargs, (
-            "Only should be used with return_flash_attn_kwargs=True"
-        )
+    def __call__(self, features, *args, **kwargs):
         if self.return_flash_attn_kwargs:
             cu_seq_lens = [0]
             max_length = 0
@@ -53,7 +43,7 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
         is_labels_provided = "labels" in features[0]
         ret = {"input_ids": [], "labels": []}
         separator = torch.tensor(
-            [separator_id],
+            [self.separator_id],
             dtype=features[0]["input_ids"].dtype,
             device=features[0]["input_ids"].device,
         )
@@ -88,17 +78,14 @@ class TensorDataCollatorWithFlattening(DefaultDataCollator):
         return ret
 
 
-@dataclass
 class TensorDataCollatorWithFlatteningDPO(TensorDataCollatorWithFlattening):
-
-    def __call__(self, features, return_tensors=None):
-
+    def __call__(self, features, *args, **kwargs):
         # call the original collator on chosen and rejected separately, then combine
         def filter_batch(match_string, features):
             return [{k.replace(match_string, ""): v for k, v in f.items() if match_string in k} for f in features]
 
-        chosen_features = super().__call__(filter_batch("chosen_", features), return_tensors=return_tensors)
-        rejected_features = super().__call__(filter_batch("rejected_", features), return_tensors=return_tensors)
+        chosen_features = super().__call__(filter_batch("chosen_", features), *args, **kwargs)
+        rejected_features = super().__call__(filter_batch("rejected_", features), *args, **kwargs)
 
         result = {}
         for k in chosen_features:
@@ -154,7 +141,7 @@ def concatenated_inputs(
     if 'seq_idx' in chosen_features:
         ret[f"{tag}seq_idx"] = torch.cat([
             chosen_features['seq_idx'],
-            rejected_features['seq_idx'] + 
+            rejected_features['seq_idx'] +
             chosen_features['seq_idx'][0,-1],
         ], dim=-1)
 
@@ -162,8 +149,8 @@ def concatenated_inputs(
 
 # for dpo - padding free
 def get_batch_logps(
-    logits: torch.FloatTensor, 
-    labels: torch.LongTensor, 
+    logits: torch.FloatTensor,
+    labels: torch.LongTensor,
     cu_seq_lens: torch.LongTensor,
     average_log_prob: bool = False,
 ) -> torch.FloatTensor:
@@ -190,11 +177,11 @@ def get_batch_logps(
     return torch.concat(
         [
             (
-                (ps * mask).sum(-1) / mask.sum(-1) 
+                (ps * mask).sum(-1) / mask.sum(-1)
                 if average_log_prob else
                 (ps * mask).sum(-1)
             )
-            for ps, mask in 
+            for ps, mask in
             zip(
                 torch.split(per_token_logps, splits, dim=-1),
                 torch.split(loss_mask, splits, dim=-1),
