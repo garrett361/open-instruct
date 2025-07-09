@@ -71,13 +71,13 @@ class TensorDataCollatorWithFlattening:
 
 
 class TensorDataCollatorWithFlatteningDPO(TensorDataCollatorWithFlattening):
-    def __call__(self, features, return_tensors=None):
+    def __call__(self, features, *args, **kwargs):
         # call the original collator on chosen and rejected separately, then combine
         def filter_batch(match_string, features):
             return [{k.replace(match_string, ""): v for k, v in f.items() if match_string in k} for f in features]
 
-        chosen_features = super().__call__(filter_batch("chosen_", features), return_tensors=return_tensors)
-        rejected_features = super().__call__(filter_batch("rejected_", features), return_tensors=return_tensors)
+        chosen_features = super()(filter_batch("chosen_", features), *args, **kwargs)
+        rejected_features = super()(filter_batch("rejected_", features), *args, **kwargs)
 
         result = {}
         for k in chosen_features:
