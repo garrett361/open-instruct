@@ -15,7 +15,7 @@ from transformers import (
 # HACK for being able to load the collator without needing to install open-instruct
 open_instruct_dir = Path(__file__).parent.parent.absolute()
 sys.path.append(open_instruct_dir)
-from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening
+from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening, TensorDataCollatorWithFlatteningDPO
 
 MODEL_CLASSES = {"bamba": BambaForCausalLM, "llama": LlamaForCausalLM}
 MODEL_CFGS = {
