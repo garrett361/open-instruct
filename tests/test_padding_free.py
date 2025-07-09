@@ -5,15 +5,23 @@ import pytest
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from transformers import BambaConfig, BambaForCausalLM, LlamaConfig, LlamaForCausalLM
+from transformers import (
+    BambaConfig,
+    BambaForCausalLM,
+    LlamaConfig,
+    LlamaForCausalLM,
+)
 
 # HACK for being able to load the collator without needing to install open-instruct
 open_instruct_dir = Path(__file__).parent.parent.absolute()
 sys.path.append(open_instruct_dir)
-from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening, TensorDataCollatorWithFlatteningDPO
+from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening
 
 MODEL_CLASSES = {"bamba": BambaForCausalLM, "llama": LlamaForCausalLM}
-MODEL_CFGS = {"bamba": BambaConfig, "llama": LlamaConfig}
+MODEL_CFGS = {
+    "bamba": BambaConfig,
+    "llama": LlamaConfig,
+}
 MODEL_KWARGS = {
     "bamba": dict(
         attention_dropout=0.0,
@@ -60,7 +68,13 @@ class TestPaddingFree:
         model_cls = MODEL_CLASSES[model_name]
         model_cfg = MODEL_CFGS[model_name]
         model_kwargs = MODEL_KWARGS[model_name]
-        cfg = model_cfg(**{**model_kwargs, "torch_dtype": self.dtype, "attn_implementation": "flash_attention_2"})
+        cfg = model_cfg(
+            **{
+                **model_kwargs,
+                "torch_dtype": self.dtype,
+                "attn_implementation": "flash_attention_2",
+            }
+        )
         model = model_cls(cfg).to("cuda", dtype=self.dtype)
         return model, cfg
 
@@ -71,12 +85,21 @@ class TestPaddingFree:
 
         inputs = torch.randint(cfg.vocab_size, size=(self.batch_size, self.seqlen), device="cuda")
         # Non-padding-free batch:
-        batch = {"input_ids": inputs, "labels": inputs, "attention_mask": torch.ones_like(inputs)}
+        batch = {
+            "input_ids": inputs,
+            "labels": inputs,
+            "attention_mask": torch.ones_like(inputs),
+        }
 
         # Padding-free batch from the collator
         dataset = {idx: {"input_ids": example} for idx, example in enumerate(inputs)}
         collate_fn = TensorDataCollatorWithFlattening()
-        train_dataloader = DataLoader(dataset, shuffle=False, collate_fn=collate_fn, batch_size=self.batch_size)
+        train_dataloader = DataLoader(
+            dataset,
+            shuffle=False,
+            collate_fn=collate_fn,
+            batch_size=self.batch_size,
+        )
         pf_batch = next(iter(train_dataloader))
         assert batch["input_ids"].shape[0] == 2
         assert pf_batch["input_ids"].shape[0] == 1
