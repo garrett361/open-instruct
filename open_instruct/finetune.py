@@ -827,6 +827,8 @@ def main(args: FlatArguments, tc: TokenizerConfig):
                     if args.load_balancing_loss:
                         aux_loss = args.load_balancing_weight * outputs.aux_loss
                         loss += aux_loss
+                del outputs
+
                 # We keep track of the loss at each logged step
                 total_loss += loss.detach().float()
                 accelerator.backward(loss)
