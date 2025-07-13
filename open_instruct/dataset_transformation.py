@@ -896,7 +896,7 @@ def sft_span_seach_mask_out(
             )
 
         return labels
-
+    
     messages = row["messages"]
     additional_inputs = {}
     for k in ["tools", "documents"]:
@@ -915,16 +915,37 @@ def sft_span_seach_mask_out(
         add_generation_prompt=False,
         **additional_inputs,
     )
+    
+    # Heuristic: assume truncation if hitting the exact max length (for downstream data filtering)
+    was_truncated = input_ids.shape[1] == max_seq_length
+    row["was_truncated"] = was_truncated
+    
     attention_mask = torch.ones_like(input_ids)
     labels = masking_strategy_span_search(
         input_ids, tokenizer,
     )
+    #==== DEBUGGING: 
+    input_ids_flat = input_ids.flatten()
+    labels_flat = labels.flatten()
+
+    print("=" * 60)
+    print(f"== Was truncated:", was_truncated)
+    print(f"\n== Tokenized input_ids (len={len(input_ids_flat.tolist())}):\n {input_ids_flat.tolist()}")
+    print(f"\n== Decoded text:\n {tokenizer.decode(input_ids_flat, skip_special_tokens=False)}")
+
+    print(f"\n==Labels (len={len(labels_flat.tolist())}):\n {labels_flat.tolist()}")
+    print(f"\n== Label tokens:")
+    print(tokenizer.decode([id for id in labels_flat.tolist() if id != ignore_label], skip_special_tokens=False))
+    print(f"\n")
+    #==== 
+    
     row[INPUT_IDS_KEY] = input_ids.flatten()
     row[LABELS_KEY] = labels.flatten()
     row[ATTENTION_MASK_KEY] = attention_mask.flatten()
     return row
 
 def last_turn_tulu_tokenize_and_truncate_v1(row: Dict[str, Any], tokenizer: PreTrainedTokenizer, max_seq_length: int):
+    
     """taken directly from https://github.com/allenai/open-instruct/blob/ba11286e5b9eb00d4ce5b40ef4cac1389888416a/open_instruct/finetune.py#L385"""
     messages = row["messages"]
     if len(messages) == 0:
@@ -994,6 +1015,13 @@ def last_turn_tulu_tokenize_and_truncate_v1(row: Dict[str, Any], tokenizer: PreT
 
 def sft_tulu_filter_v1(row: Dict[str, Any], tokenizer: PreTrainedTokenizer):
     return any(x != -100 for x in row[LABELS_KEY])
+
+def sft_tulu_filter_truncated_v1(row: Dict[str, Any], tokenizer: PreTrainedTokenizer):
+    # like v1 but futher filter out rows being truncated to ensure proper conversations.
+    return (
+        any(x != -100 for x in row[LABELS_KEY])  # keep if at least one valid label
+        and not row.get("was_truncated", False)  # and was not truncated
+    )
 
 
 def preference_tokenize_v1(row: Dict[str, Any], tokenizer: PreTrainedTokenizer):
@@ -1195,6 +1223,7 @@ TRANSFORM_FNS = {
     "sft_tulu_tokenize_and_truncate_v1": (sft_tulu_tokenize_and_truncate_v1, "map"),
     "sft_span_seach_mask_out": (sft_span_seach_mask_out, "map"),
     "sft_tulu_filter_v1": (sft_tulu_filter_v1, "filter"),
+    "sft_tulu_filter_truncated_v1": (sft_tulu_filter_truncated_v1, "filter"),
     "preference_tokenize_v1": (preference_tokenize_v1, "map"),
     "preference_filter_v1": (preference_filter_v1, "filter"),
     "preference_tulu_tokenize_and_truncate_v1": (preference_tulu_tokenize_and_truncate_v1_2, "map"),
@@ -1290,12 +1319,16 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
 
     tokenizer = tc.tokenizer
     dataset = dc.dataset
-    for fn_name, fn_args in zip(dc.transform_fn, dc.transform_fn_args):
+    print(f'\n== dc: {dc}')
+    
+    for i,(fn_name, fn_args) in enumerate(zip(dc.transform_fn, dc.transform_fn_args)):
         fn, fn_type = TRANSFORM_FNS[fn_name]
         # always pass in tokenizer and other args if needed
         fn_kwargs = {"tokenizer": tokenizer}
         fn_kwargs.update(fn_args)
-
+        
+        print(f'\n== {i+1}. Apply fn {fn} with extra fn_args: {fn_args} to dataset: {type(dataset)} \n {dataset}')
+    
         # perform the transformation
         target_columns = dataset.column_names if dc.target_columns is None else dc.target_columns
         if fn_type == "map":
@@ -1304,6 +1337,7 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
                 fn_kwargs=fn_kwargs,
                 remove_columns=[col for col in dataset.column_names if col not in target_columns],
                 num_proc=get_num_proc(len(dataset), num_proc, APPLY_CHAT_TEMPLATE_EXAMPLE_PER_SECOND_PER_CPU),
+                load_from_cache_file=False, # XH: force re-processing!
             )
         elif fn_type == "filter":
             dataset = dataset.filter(
@@ -1441,13 +1475,17 @@ class LocalDatasetTransformationCache:
             print(f"✅ Found cached dataset at {cache_path}")
             return Dataset.load_from_disk(cache_path, keep_in_memory=True)
 
-        print(f"Cache not found or invalid, transforming datasets...")
+        print(f"==\n Cache not found or invalid, transforming datasets...\n")
 
         # Transform each dataset
         transformed_datasets = []
         for dc in dcs:
+            print(f"\n== dc: {dc} \n== tc: {tc}")
             dataset = get_dataset_v1(dc, tc)
             transformed_datasets.append(dataset)
+
+        from open_instruct.utils_granite import stop_debugging
+        stop_debugging(None,"AFTER-get_dataset_v1")
 
         # Combine datasets
         combined_dataset = concatenate_datasets(transformed_datasets)
@@ -1522,7 +1560,8 @@ def get_cached_dataset_tulu(
                 new_range = int(frac_or_num_samples * len(dataset_config.dataset))
             dataset_config.update_range(new_range)
             dcs.append(dataset_config)
-        dataset_config_hash = compute_config_hash(dcs, tc)
+            print(f"\n== dcs: {dcs}")
+        dataset_config_hash = compute_config_hash(dcs, tc)    
     if dataset_cache_mode == "local":
         cache = LocalDatasetTransformationCache(
             config_hash=dataset_config_hash, dataset_local_cache_dir=dataset_local_cache_dir
