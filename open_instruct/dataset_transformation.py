@@ -924,20 +924,17 @@ def sft_span_seach_mask_out(
     labels = masking_strategy_span_search(
         input_ids, tokenizer,
     )
-    #==== DEBUGGING: 
-    input_ids_flat = input_ids.flatten()
-    labels_flat = labels.flatten()
-
-    print("=" * 60)
-    print(f"== Was truncated:", was_truncated)
-    print(f"\n== Tokenized input_ids (len={len(input_ids_flat.tolist())}):\n {input_ids_flat.tolist()}")
-    print(f"\n== Decoded text:\n {tokenizer.decode(input_ids_flat, skip_special_tokens=False)}")
-
-    print(f"\n==Labels (len={len(labels_flat.tolist())}):\n {labels_flat.tolist()}")
-    print(f"\n== Label tokens:")
-    print(tokenizer.decode([id for id in labels_flat.tolist() if id != ignore_label], skip_special_tokens=False))
-    print(f"\n")
-    #==== 
+    # #==== DEBUGGING: 
+    # input_ids_flat = input_ids.flatten()
+    # labels_flat = labels.flatten()
+    # print("=" * 60)
+    # print(f"== Was truncated:", was_truncated)
+    # print(f"== Tokenized input_ids (len={len(input_ids_flat.tolist())}):\n {input_ids_flat.tolist()}")
+    # print(f"== Decoded text:\n{tokenizer.decode(input_ids_flat, skip_special_tokens=False)}")
+    # print(f"== Labels (len={len(labels_flat.tolist())}):\n {labels_flat.tolist()}")
+    # print(f"\n==Gtruth txt/tokens:")
+    # print(tokenizer.decode([id for id in labels_flat.tolist() if id != ignore_label], skip_special_tokens=False))
+    # #==== 
     
     row[INPUT_IDS_KEY] = input_ids.flatten()
     row[LABELS_KEY] = labels.flatten()
@@ -1319,17 +1316,15 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
 
     tokenizer = tc.tokenizer
     dataset = dc.dataset
-    print(f'\n== dc: {dc}')
     
     for i,(fn_name, fn_args) in enumerate(zip(dc.transform_fn, dc.transform_fn_args)):
         fn, fn_type = TRANSFORM_FNS[fn_name]
         # always pass in tokenizer and other args if needed
         fn_kwargs = {"tokenizer": tokenizer}
         fn_kwargs.update(fn_args)
-        
-        print(f'\n== {i+1}. Apply fn {fn} with extra fn_args: {fn_args} to dataset: {type(dataset)} \n {dataset}')
     
         # perform the transformation
+        print(f'== Perform transformation {i+1}/{len(dc.transform_fn)} {fn.__name__} with fn_args {fn_args}...')
         target_columns = dataset.column_names if dc.target_columns is None else dc.target_columns
         if fn_type == "map":
             dataset = dataset.map(
@@ -1475,17 +1470,19 @@ class LocalDatasetTransformationCache:
             print(f"✅ Found cached dataset at {cache_path}")
             return Dataset.load_from_disk(cache_path, keep_in_memory=True)
 
-        print(f"==\n Cache not found or invalid, transforming datasets...\n")
+        print(f"\n== Cache not found or invalid, transforming datasets...\n")
 
         # Transform each dataset
         transformed_datasets = []
-        for dc in dcs:
-            print(f"\n== dc: {dc} \n== tc: {tc}")
+        total_left_samples = 0
+        for i,dc in enumerate(dcs):
+            print(f"\n\n**** {i+1}. Processing `{dc.dataset_name}` having {len(dc.dataset):,} samples...")
             dataset = get_dataset_v1(dc, tc)
+            print(f"\n**** Summary: {dc.dataset_name} has {len(dc.dataset):,} samples and after processing {len(dataset):,} samples left.")
+            total_left_samples+=len(dataset)
             transformed_datasets.append(dataset)
 
-        from open_instruct.utils_granite import stop_debugging
-        stop_debugging(None,"AFTER-get_dataset_v1")
+        print(f"\n**** TOTAL NUM.SAMPLES AFTER DATA TRANSFORMATION: {total_left_samples:,} ****\n")
 
         # Combine datasets
         combined_dataset = concatenate_datasets(transformed_datasets)
@@ -1560,7 +1557,6 @@ def get_cached_dataset_tulu(
                 new_range = int(frac_or_num_samples * len(dataset_config.dataset))
             dataset_config.update_range(new_range)
             dcs.append(dataset_config)
-            print(f"\n== dcs: {dcs}")
         dataset_config_hash = compute_config_hash(dcs, tc)    
     if dataset_cache_mode == "local":
         cache = LocalDatasetTransformationCache(
