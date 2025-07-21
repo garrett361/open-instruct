@@ -517,6 +517,8 @@ def main(args: FlatArguments, tc: TokenizerConfig):
         train_dataset = train_dataset.shuffle(seed=args.seed)
         train_dataset.set_format(type="pt")
     if accelerator.is_main_process:
+        # from open_instruct.utils_granite import stop_debugging
+        # stop_debugging(accelerator,"BEFORE VISUAL TOKENS")
         print(f"\n== train_dataset[0]: {train_dataset[0]}")
         # visualize_token(train_dataset[0][INPUT_IDS_KEY], tokenizer)
         visualize_token_label(train_dataset[0][INPUT_IDS_KEY], train_dataset[0][LABELS_KEY], tokenizer)
@@ -532,7 +534,7 @@ def main(args: FlatArguments, tc: TokenizerConfig):
             trust_remote_code=tc.trust_remote_code,
             **args.additional_model_arguments,
         )
-    elif args.model_name_or_path:
+    elif args.model_name_or_path:       
         config = AutoConfig.from_pretrained(
             args.model_name_or_path,
             revision=args.model_revision,
