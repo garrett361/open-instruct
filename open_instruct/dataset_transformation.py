@@ -48,7 +48,6 @@ import os
 from dataclasses import asdict, dataclass, field
 from functools import cached_property, partial
 from typing import Any, Dict, List, Literal, Optional
-import numpy as np
 
 import torch
 import transformers
@@ -959,7 +958,7 @@ def sft_span_seach_mask_out(
         **additional_inputs,
     )
 
-    # Heuristic: assume truncation if hitting the exact max length (for downstream data filtering)
+    # Assume truncation if hitting the exact max length (for downstream data filtering)
     was_truncated = input_ids.shape[1] == max_seq_length
     row["was_truncated"] = was_truncated
 
@@ -1400,7 +1399,7 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
                 fn_kwargs=fn_kwargs,
                 remove_columns=[col for col in dataset.column_names if col not in target_columns],
                 num_proc=get_num_proc(len(dataset), num_proc, APPLY_CHAT_TEMPLATE_EXAMPLE_PER_SECOND_PER_CPU),
-                load_from_cache_file=False, # XH: force running from scratch!
+                load_from_cache_file=False, # force running from scratch (to ensure consistency across multiple datafiles)
             )
         elif fn_type == "filter":
             dataset = dataset.filter(
