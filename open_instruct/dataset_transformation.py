@@ -1585,14 +1585,11 @@ def count_total_tokens(dataset):
     num_proc = int(float(os.environ.get("BEAKER_ASSIGNED_CPU_COUNT", multiprocessing.cpu_count())))
     token_counts = dataset.map(get_token_count, num_proc=num_proc)
     total_tokens = sum(token_counts["num_tokens"])
-    token_lengths = np.array(token_counts["num_tokens"])
+    token_lengths = torch.tensor(token_counts["num_tokens"], dtype=torch.float)
 
-    total_tokens = token_lengths.sum()
-    avg_tokens = token_lengths.mean()
-    std_tokens = token_lengths.std()
-    # print(f"== Total tokens: {total_tokens:,}")
-    # print(f"== Average tokens per example: {avg_tokens:.2f}")
-    # print(f"== Stddev of tokens per example: {std_tokens:.2f}")
+    total_tokens = token_lengths.sum().item()
+    avg_tokens = token_lengths.mean().item()
+    std_tokens = token_lengths.std(unbiased=False).item()
     return total_tokens, avg_tokens, std_tokens
 
 
