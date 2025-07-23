@@ -1825,7 +1825,6 @@ class LocalDatasetTransformationCache:
 
         # Transform each dataset and collect statistics
         transformed_datasets = []
-        remaining_samples = 0
         dataset_statistics = []
         dataset_order = []
         for i, dc in enumerate(dcs):
@@ -1833,19 +1832,7 @@ class LocalDatasetTransformationCache:
             print(f"\n\n**** {i + 1}. Processing `{dc.dataset_name}` having {len(dc.dataset):,} samples...")
             start_time = time.time()
             dataset = get_dataset_v1(dc, tc)
-            if INPUT_IDS_KEY in dataset.features:
-                total_tokens, avg_tokens, std_tokens = count_total_tokens(dataset)
-                print(
-                    f"\n**** Summary for {dc.dataset_name}:\n"
-                    f" - Original samples: {len(dc.dataset):,}\n"
-                    f" - Samples after processing: {len(dataset):,}\n"
-                    f" - Total tokens: {total_tokens:,}\n"
-                    f" - Avg tokens per sample: {avg_tokens:,.1f}\n"
-                    f" - Stddev tokens per sample: {std_tokens:.2f}\n"
-                    f" - Processing time: {duration:.2f} seconds\n"
-                )
             duration = time.time() - start_time
-            remaining_samples += len(dataset)
             transformed_datasets.append(dataset)
 
             # Collect statistics for this dataset
@@ -1879,7 +1866,6 @@ class LocalDatasetTransformationCache:
 
             dataset_statistics.append(stats)
             dataset_order.append(dc.dataset_name)
-        print(f"\n**** TOTAL NUM.SAMPLES AFTER DATA TRANSFORMATION: {remaining_samples:,} ****\n")
 
         # Combine datasets
         combined_dataset = concatenate_datasets(transformed_datasets)
@@ -1908,21 +1894,6 @@ class LocalDatasetTransformationCache:
         if return_statistics:
             return loaded_dataset, all_statistics
         return loaded_dataset, None
-
-
-def count_total_tokens(dataset):
-    # count num.tokens per ds:
-    def get_token_count(row):
-        return {"num_tokens": len(row[INPUT_IDS_KEY])}
-
-    num_proc = int(float(os.environ.get("BEAKER_ASSIGNED_CPU_COUNT", multiprocessing.cpu_count())))
-    token_counts = dataset.map(get_token_count, num_proc=num_proc)
-    token_lengths = torch.tensor(token_counts["num_tokens"], dtype=torch.float)
-
-    total_tokens = token_lengths.sum().item()
-    avg_tokens = token_lengths.mean().item()
-    std_tokens = token_lengths.std(unbiased=False).item()
-    return total_tokens, avg_tokens, std_tokens
 
 
 def get_cached_dataset(
