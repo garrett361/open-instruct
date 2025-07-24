@@ -195,10 +195,7 @@ def process_batch(
     return processed
 
 
-def concatenated_inputs(
-    batch: Dict[str, Union[List, torch.LongTensor]],
-    pad_token_id: int = 0,
-) -> Dict[str, torch.LongTensor]:
+def concatenated_inputs(batch: Dict[str, Union[List, torch.LongTensor]]) -> Dict[str, torch.LongTensor]:
     """Concatenate the chosen and rejected inputs into a single tensor.
 
     Args:
@@ -212,12 +209,12 @@ def concatenated_inputs(
     concatenated_batch = {}
     for k in batch:
         if k.startswith("chosen") and isinstance(batch[k], torch.Tensor):
-            pad_value = -100 if "labels" in k else pad_token_id
+            pad_value = -100 if "labels" in k else 0
             concatenated_key = k.replace("chosen", "concatenated")
             concatenated_batch[concatenated_key] = pad_to_length(batch[k], max_length, pad_value=pad_value)
     for k in batch:
         if k.startswith("rejected") and isinstance(batch[k], torch.Tensor):
-            pad_value = -100 if "labels" in k else pad_token_id
+            pad_value = -100 if "labels" in k else 0
             concatenated_key = k.replace("rejected", "concatenated")
             concatenated_batch[concatenated_key] = torch.cat(
                 (concatenated_batch[concatenated_key], pad_to_length(batch[k], max_length, pad_value=pad_value)), dim=0
@@ -237,11 +234,7 @@ def concatenated_forward(
     We do this to avoid doing two forward passes, because it's faster for FSDP.
     """
     if not packing:
-        try:
-            pad_token_id = model.tokenizer.pad_token_id
-        except:
-            pad_token_id = 0
-        concatenated_batch = concatenated_inputs(batch, pad_token_id=pad_token_id)
+        concatenated_batch = concatenated_inputs(batch)
     else:
         concatenated_batch, bs = pf_concatenated_inputs(batch)
 
