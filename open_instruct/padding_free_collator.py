@@ -6,6 +6,7 @@ from transformers import DefaultDataCollator
 from typing import Dict, Union, List
 from open_instruct.model_utils import log_softmax_and_gather
 
+
 @dataclass
 class TensorDataCollatorWithFlattening(DefaultDataCollator):
     """
