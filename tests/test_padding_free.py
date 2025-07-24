@@ -22,7 +22,7 @@ sys.path.append(open_instruct_dir)
 from open_instruct.dataset_processor import CHAT_TEMPLATES
 from open_instruct.dataset_transformation import (
     sft_tulu_tokenize_and_truncate_v1, 
-    preference_span_search_mask_out
+    preference_tulu_tokenize_and_truncate_v1_2,
 )
 from open_instruct.padding_free_collator import (
     TensorDataCollatorWithFlattening,
@@ -242,12 +242,12 @@ class TestPaddingFree:
                 ],
                 "rejected": [
                     {"role": "user", "content": "What is one plus two?"},
-                    {"role": "assistant", "content": "The answer is 12"},
+                    {"role": "assistant", "content": "I am a beginner in math. I have not yet learnt addition. The answer is 12"},
                 ]
             },
         }
 
-        tok_data = {k: preference_span_search_mask_out(v, tokenizer, max_seq_length=2**30) for k, v in data.items()}
+        tok_data = {k: preference_tulu_tokenize_and_truncate_v1_2(v, tokenizer, max_seq_length=2**30) for k, v in data.items()}
 
         collate_fn = DataCollatorForSeq2SeqDPO(tokenizer=tokenizer, model=model, padding="longest")
         dataloader = DataLoader(tok_data, shuffle=False, collate_fn=collate_fn, batch_size=self.batch_size)
