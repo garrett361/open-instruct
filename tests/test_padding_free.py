@@ -210,6 +210,9 @@ class TestPaddingFree:
         print(f"{nan_grads=}")
 
     
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="Padding free tests require CUDA")
+    @pytest.mark.skipif(not flash_attn_available, reason="Padding free requires flash_attn")
+    @pytest.mark.parametrize("model_name", ["bamba", "llama"])
     def test_padding_free_dpo(self, model_name: str) -> None:
         if model_name == "bamba" and not mamba_and_causal_conv_available:
             pytest.skip("bamba padding-free tests require mamba_ssm and causal_conv1d")
