@@ -1049,6 +1049,10 @@ def sft_tulu_filter_truncated_v1(row: Dict[str, Any], tokenizer: PreTrainedToken
         and not row.get("was_truncated", False)  # and was not truncated
     )
 
+def sft_tulu_filter_nothing(row: Dict[str, Any], tokenizer: PreTrainedTokenizer):
+    # XH: trick to not apply any filter
+    return True
+
 
 def preference_tokenize_v1(row: Dict[str, Any], tokenizer: PreTrainedTokenizer):
     # Extract prompt (all messages except the last one)
@@ -1283,6 +1287,7 @@ TRANSFORM_FNS = {
     "sft_tulu_tokenize_and_truncate_v1": (sft_tulu_tokenize_and_truncate_v1, "map"),
     "sft_span_seach_mask_out": (sft_span_seach_mask_out, "map"),
     "sft_tulu_filter_v1": (sft_tulu_filter_v1, "filter"),
+    "sft_tulu_filter_nothing": (sft_tulu_filter_nothing, "filter"),
     "sft_tulu_filter_truncated_v1": (sft_tulu_filter_truncated_v1, "filter"),
     "preference_tokenize_v1": (preference_tokenize_v1, "map"),
     "preference_filter_v1": (preference_filter_v1, "filter"),
@@ -1399,7 +1404,7 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
                 fn_kwargs=fn_kwargs,
                 remove_columns=[col for col in dataset.column_names if col not in target_columns],
                 num_proc=get_num_proc(len(dataset), num_proc, APPLY_CHAT_TEMPLATE_EXAMPLE_PER_SECOND_PER_CPU),
-                load_from_cache_file=False, # force running from scratch (to ensure consistency across multiple datafiles)
+                load_from_cache_file=True, # False to force running from scratch (to ensure consistency across multiple datafiles)
             )
         elif fn_type == "filter":
             dataset = dataset.filter(

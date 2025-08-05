@@ -42,6 +42,10 @@ from ctypes import CDLL, POINTER, Structure, c_char_p, c_int, c_ulong, c_void_p
 from dataclasses import dataclass
 from typing import Any, List, NewType, Optional, Tuple, Union
 
+import errno
+import shutil
+
+
 import numpy as np
 import ray
 import requests
@@ -53,6 +57,7 @@ from dateutil import parser
 from huggingface_hub import HfApi
 from rich.pretty import pprint
 from transformers import MODEL_FOR_CAUSAL_LM_MAPPING, HfArgumentParser
+
 
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
@@ -705,6 +710,16 @@ def is_checkpoint_folder(dir: str, folder: str) -> bool:
     return (folder.startswith("step_") or folder.startswith("epoch_")) and os.path.isdir(os.path.join(dir, folder))
 
 
+
+def safe_remove(func, path, exc_info):
+    # Ignore FileNotFoundError (errno.ENOENT)
+    # This prevents the distributed training runs from crashing if a file (like random_states_*.pkl) is already deleted by another process before rmtree() tries to remove it.
+    if not (isinstance(exc_info[1], FileNotFoundError) or getattr(exc_info[1], 'errno', None) == errno.ENOENT):
+        logger.error(f"Error deleting {path}: {exc_info[1]}")
+        raise exc_info[1]
+    else:
+        logger.warning(f"Ignored missing file during deletion: {path}")
+
 def clean_last_n_checkpoints(output_dir: str, keep_last_n_checkpoints: int) -> None:
     # remove the last checkpoint to save space
     folders = [f for f in os.listdir(output_dir) if is_checkpoint_folder(output_dir, f)]
@@ -713,7 +728,8 @@ def clean_last_n_checkpoints(output_dir: str, keep_last_n_checkpoints: int) -> N
     if keep_last_n_checkpoints >= 0 and len(checkpoints) > keep_last_n_checkpoints:
         for checkpoint in checkpoints[: len(checkpoints) - keep_last_n_checkpoints]:
             logger.info(f"Removing checkpoint {checkpoint}")
-            shutil.rmtree(os.path.join(output_dir, checkpoint))
+            #== XH: use a custom onerror handler for shutil.rmtree:
+            shutil.rmtree(os.path.join(output_dir, checkpoint),onerror=safe_remove)
     logger.info("Remaining files:" + str(os.listdir(output_dir)))
 
 

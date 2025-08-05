@@ -520,6 +520,7 @@ def main(args: FlatArguments, tc: TokenizerConfig):
         train_dataset = train_dataset.shuffle(seed=args.seed)
         train_dataset.set_format(type="pt")
     if accelerator.is_main_process:
+        print(f"\n== len(train_dataset): {len(train_dataset):,}")
         print(f"\n== train_dataset[0]: {train_dataset[0]}")
         # visualize_token(train_dataset[0][INPUT_IDS_KEY], tokenizer)
         visualize_token_label(train_dataset[0][INPUT_IDS_KEY], train_dataset[0][LABELS_KEY], tokenizer)
