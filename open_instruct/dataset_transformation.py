@@ -958,6 +958,18 @@ class TokenizerConfig:
     add_special_tokens: Optional[List[str]] = field(
         default=None, metadata={"help": "List of additional special tokens to add to the tokenizer"}
     )
+    asst_tag: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Custom asst_tag, only used for the sft_span_seach_mask_out transform fn. Defaults to <|start_of_role|>assistant<|end_of_role|>."
+        },
+    )
+    end_tag: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Custom end_tag, only used for the sft_span_seach_mask_out transform fn. Defaults to <|end_of_text|>."
+        },
+    )
 
     @cached_property
     def tokenizer(self):
@@ -1689,6 +1701,10 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
         fn, fn_type = TRANSFORM_FNS[fn_name]
         # always pass in tokenizer and other args if needed
         fn_kwargs = {"tokenizer": tokenizer}
+        if tc.asst_tag is not None:
+            fn_kwargs = {"asst_tag": tc.asst_tag}
+        if tc.end_tag is not None:
+            fn_kwargs = {"end_tag": tc.end_tag}
         fn_kwargs.update(fn_args)
 
         # perform the transformation
