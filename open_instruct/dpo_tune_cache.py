@@ -66,6 +66,7 @@ from open_instruct.dataset_transformation import (
     TokenizerConfig,
     get_cached_dataset_tulu,
     visualize_token,
+    remove_non_tensor_columns
 )
 from open_instruct.dpo_utils import (
     DataCollatorForSeq2SeqDPO,
@@ -709,6 +710,9 @@ def main(args: FlatArguments, tc: TokenizerConfig):
     else:
         collate_fn = DataCollatorForSeq2SeqDPO(tokenizer=tokenizer, model=model, padding="longest")
 
+    # The collators expect to act on tensor data, so remove any non-tensor entries now. The
+    # non-tensor entries are assumed to be non-crucial metadata like `DATASET_ORIGIN_KEY`
+    train_dataset = remove_non_tensor_columns(train_dataset)
     train_dataloader = DataLoader(
         train_dataset, shuffle=True, collate_fn=collate_fn, batch_size=args.per_device_train_batch_size
     )
@@ -1005,7 +1009,9 @@ def main(args: FlatArguments, tc: TokenizerConfig):
             accelerator.wait_for_everyone()
 
     if args.output_dir is not None:
-        save_with_accelerate(accelerator, model, tokenizer, args.output_dir, args.use_lora, tc.chat_template_name)
+        save_with_accelerate(
+            accelerator, model, tokenizer, args.output_dir, args.use_lora, chat_template_name=tc.chat_template_name
+        )
 
     # remove all checkpoints to save space
     if accelerator.is_local_main_process:

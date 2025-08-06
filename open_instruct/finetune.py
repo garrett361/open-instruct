@@ -59,6 +59,7 @@ from open_instruct.dataset_transformation import (
     TokenizerConfig,
     get_cached_dataset_tulu,
     visualize_token_label,
+    remove_non_tensor_columns
 )
 from open_instruct.model_utils import push_folder_to_hub, save_with_accelerate
 from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening
@@ -637,6 +638,9 @@ def main(args: FlatArguments, tc: TokenizerConfig):
         collate_fn = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest")
 
     accelerator.print("Creating dataloader")
+    # The collators expect to act on tensor data, so remove any non-tensor entries now. The
+    # non-tensor entries are assumed to be non-crucial metadata like `DATASET_ORIGIN_KEY`
+    train_dataset = remove_non_tensor_columns(train_dataset)
     train_dataloader = DataLoader(
         train_dataset, shuffle=True, collate_fn=collate_fn, batch_size=args.per_device_train_batch_size
     )
@@ -922,14 +926,14 @@ def main(args: FlatArguments, tc: TokenizerConfig):
                         avg_loss = sum_loss / total_fwd_passes
                         metrics_to_log["train_loss"] = avg_loss
                     else:
-                        avg_loss_per_total_tok = sum_loss / total_tokens_this_log_period
+                        avg_loss = sum_loss / total_tokens_this_log_period
                         # The loss per pred tok is the closest analogue to what we report as the
                         # avg_loss in the "mean" case
                         avg_loss_per_pred_tok = sum_loss / pred_tokens_this_log_period
                         total_optim_steps = args.logging_steps * accelerator.num_processes
                         avg_sum_loss = sum_loss / total_optim_steps
                         metrics_to_log["train_sum_loss"] = avg_sum_loss
-                        metrics_to_log["train_loss_per_total_tok"] = avg_loss_per_total_tok
+                        metrics_to_log["train_loss_per_total_tok"] = avg_loss
                         metrics_to_log["train_loss_per_pred_tok"] = avg_loss_per_pred_tok
                     if args.verbose:
                         sec_per_step = (time.time() - start_time) / (completed_steps - resume_step)
@@ -991,7 +995,9 @@ def main(args: FlatArguments, tc: TokenizerConfig):
             accelerator.wait_for_everyone()
 
     if args.output_dir is not None:
-        save_with_accelerate(accelerator, model, tokenizer, args.output_dir, args.use_lora, tc.chat_template_name)
+        save_with_accelerate(
+            accelerator, model, tokenizer, args.output_dir, args.use_lora, chat_template_name=tc.chat_template_name
+        )
 
     # remove all checkpoints to save space
     if args.clean_checkpoints_at_end and accelerator.is_local_main_process:
