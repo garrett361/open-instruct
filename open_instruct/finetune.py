@@ -58,8 +58,8 @@ from open_instruct.dataset_transformation import (
     TOKENIZED_SFT_DATASET_KEYS,
     TokenizerConfig,
     get_cached_dataset_tulu,
+    remove_non_tensor_columns,
     visualize_token_label,
-    remove_non_tensor_columns
 )
 from open_instruct.model_utils import push_folder_to_hub, save_with_accelerate
 from open_instruct.padding_free_collator import TensorDataCollatorWithFlattening
