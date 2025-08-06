@@ -3,7 +3,7 @@ from typing import Dict, List, Union
 
 import torch
 from transformers import DefaultDataCollator
-from typing import Dict, Union, List
+
 from open_instruct.model_utils import log_softmax_and_gather
 
 
@@ -131,7 +131,8 @@ def concatenated_inputs(
 
     if "seq_idx" in chosen_features:
         ret[f"{tag}seq_idx"] = torch.cat(
-            [chosen_features["seq_idx"], rejected_features["seq_idx"] + len(chosen_features["cu_seq_lens_k"])- 1], dim=-1
+            [chosen_features["seq_idx"], rejected_features["seq_idx"] + len(chosen_features["cu_seq_lens_k"]) - 1],
+            dim=-1,
         )
 
     return ret, len(chosen_features["cu_seq_lens_k"]) - 1
