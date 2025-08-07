@@ -88,12 +88,6 @@ class FlatArguments:
     # We need to track what fields those can be. Each time a new arg
     # has a dict type, it must be added to this list.
     # Important: These should be typed with Optional[Union[dict,str,...]]
-    _VALID_DICT_FIELDS = ["additional_model_arguments"]
-
-    # Sometimes users will pass in a `str` repr of a dict in the CLI
-    # We need to track what fields those can be. Each time a new arg
-    # has a dict type, it must be added to this list.
-    # Important: These should be typed with Optional[Union[dict,str,...]]
     # Note: the suggested ellipses typing above causes errors on python 3.10, so they are omitted.
     _VALID_DICT_FIELDS = ["additional_model_arguments"]
 
@@ -370,15 +364,15 @@ class FlatArguments:
                 raise ValueError(f"final_lr_ratio must be between 0 and 1, not {self.final_lr_ratio=}")
 
         # Parse in args that could be `dict` sent in from the CLI as a string
-        for dict_feld in self._VALID_DICT_FIELDS:
-            passed_value = getattr(self, dict_feld)
+        for dict_field in self._VALID_DICT_FIELDS:
+            passed_value = getattr(self, dict_field)
             # We only want to do this if the str starts with a bracket to indicate a `dict`
             # else its likely a filename if supported
             if isinstance(passed_value, str) and passed_value.startswith("{"):
                 loaded_dict = json.loads(passed_value)
                 # Convert str values to types if applicable
                 loaded_dict = _convert_str_dict(loaded_dict)
-                setattr(self, dict_feld, loaded_dict)
+                setattr(self, dict_field, loaded_dict)
 
 
 def main(args: FlatArguments, tc: TokenizerConfig):
