@@ -1718,7 +1718,7 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
         fn, fn_type = TRANSFORM_FNS[fn_name]
         # always pass in tokenizer and other args if needed
         fn_kwargs = {"tokenizer": tokenizer}
-        if tc.transform_fn_kwargs is not None:
+        if tc.transform_fn_kwargs:
             fn_params = signature(fn_name).parameters
             extra_kwargs = {k: v for k, v in tc.transform_fn_kwargs.items() if k in fn_params}
             if extra_kwargs:
