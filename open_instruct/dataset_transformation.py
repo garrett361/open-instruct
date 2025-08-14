@@ -1196,8 +1196,8 @@ def sft_span_seach_mask_out(
     def masking_strategy_span_search(input_ids: torch.tensor, tokenizer):
         # some prep
         match = lambda x, y: torch.all(x == y)
-        _asst_tag = tokenizer.encode(asst_tag)
-        _end_tag = tokenizer.encode(end_tag)
+        _asst_tag = tokenizer.encode(asst_tag, add_special_tokens=False)
+        _end_tag = tokenizer.encode(end_tag, add_special_tokens=False)
         _asst_tag = torch.tensor([_asst_tag])
         _end_tag = torch.tensor([_end_tag])
 
