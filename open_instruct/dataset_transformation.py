@@ -1879,7 +1879,7 @@ class LocalDatasetTransformationCache:
         # Check if the cache exists
         if os.path.exists(cache_path) and not dataset_skip_cache:
             print(f"✅ Found cached dataset at {cache_path}")
-            dataset = Dataset.load_from_disk(cache_path, keep_in_memory=True)
+            dataset = Dataset.load_from_disk(cache_path, keep_in_memory=False)
             if return_statistics:
                 # Load statistics from cache if available
                 stats_path = os.path.join(cache_path, "dataset_statistics.json")
