@@ -1771,7 +1771,11 @@ class DatasetTransformationCache:
         self.hf_entity = hf_entity or hf_whoami()["name"]
 
     def load_or_transform_dataset(
-        self, dcs: List[DatasetConfig], tc: TokenizerConfig, dataset_skip_cache: bool = False
+        self,
+        dcs: List[DatasetConfig],
+        tc: TokenizerConfig,
+        dataset_skip_cache: bool = False,
+        keep_in_memory: bool = False,
     ) -> Dataset:
         """Load dataset from cache if it exists, otherwise transform and cache it."""
         repo_name = f"{self.hf_entity}/dataset-mix-cached"
@@ -1786,7 +1790,12 @@ class DatasetTransformationCache:
                 print("dataset_skip_cache is True, so we will not load the dataset from cache")
             else:
                 # Use the split from the first dataset config as default
-                return load_dataset(repo_name, split=DEFAULT_SPLIT_FOR_CACHED_DATASET, revision=self.config_hash)
+                return load_dataset(
+                    repo_name,
+                    split=DEFAULT_SPLIT_FOR_CACHED_DATASET,
+                    revision=self.config_hash,
+                    keep_in_memory=keep_in_memory,
+                )
 
         print(f"Cache not found, transforming datasets...")
 
@@ -1839,7 +1848,9 @@ This is a cached dataset produced by https://github.com/allenai/open-instruct
 
         # NOTE: Load the dataset again to make sure it's downloaded to the HF cache
         print(f"✅ Found cached dataset at https://huggingface.co/datasets/{repo_name}/tree/{self.config_hash}")
-        return load_dataset(repo_name, split=DEFAULT_SPLIT_FOR_CACHED_DATASET, revision=self.config_hash)
+        return load_dataset(
+            repo_name, split=DEFAULT_SPLIT_FOR_CACHED_DATASET, revision=self.config_hash, keep_in_memory=keep_in_memory
+        )
 
 
 class LocalDatasetTransformationCache:
@@ -1872,6 +1883,7 @@ class LocalDatasetTransformationCache:
         tc: TokenizerConfig,
         dataset_skip_cache: bool = False,
         return_statistics: bool = False,
+        keep_in_memory: bool = False,
     ) -> Union[Dataset, Tuple[Dataset, Dict[str, Any]]]:
         """Load dataset from local cache if it exists, otherwise transform and cache it locally."""
         cache_path = self.get_cache_path()
@@ -1879,7 +1891,7 @@ class LocalDatasetTransformationCache:
         # Check if the cache exists
         if os.path.exists(cache_path) and not dataset_skip_cache:
             print(f"✅ Found cached dataset at {cache_path}")
-            dataset = Dataset.load_from_disk(cache_path, keep_in_memory=False)
+            dataset = Dataset.load_from_disk(cache_path, keep_in_memory=keep_in_memory)
             if return_statistics:
                 # Load statistics from cache if available
                 stats_path = os.path.join(cache_path, "dataset_statistics.json")
@@ -1961,7 +1973,7 @@ class LocalDatasetTransformationCache:
         print(f"🚀 Saved transformed dataset to {cache_path}")
         print(f"✅ Found cached dataset at {cache_path}")
 
-        loaded_dataset = Dataset.load_from_disk(cache_path, keep_in_memory=True)
+        loaded_dataset = Dataset.load_from_disk(cache_path, keep_in_memory=keep_in_memory)
         if return_statistics:
             return loaded_dataset, all_statistics
         return loaded_dataset, None
@@ -1974,13 +1986,18 @@ def get_cached_dataset(
     dataset_local_cache_dir: Optional[str] = None,
     dataset_skip_cache: bool = False,
     return_statistics: bool = False,
+    keep_in_memory: bool = False,
 ) -> Union[Dataset, Tuple[Dataset, Dict[str, Any]]]:
     if dataset_local_cache_dir is not None:
         cache = LocalDatasetTransformationCache(dataset_local_cache_dir=dataset_local_cache_dir)
     else:
         cache = DatasetTransformationCache(hf_entity=hf_entity)
     return cache.load_or_transform_dataset(
-        dcs, tc, dataset_skip_cache=dataset_skip_cache, return_statistics=return_statistics
+        dcs,
+        tc,
+        dataset_skip_cache=dataset_skip_cache,
+        return_statistics=return_statistics,
+        keep_in_memory=keep_in_memory,
     )[0]
 
 
@@ -1997,6 +2014,7 @@ def get_cached_dataset_tulu_with_statistics(
     dataset_local_cache_dir: str = "local_dataset_cache",
     dataset_skip_cache: bool = False,
     return_statistics: bool = False,
+    keep_in_memory: bool = False,
 ) -> Union[Dataset, Tuple[Dataset, Dict[str, Any]]]:
     dcs = []
     if dataset_config_hash is None:
@@ -2050,7 +2068,11 @@ def get_cached_dataset_tulu_with_statistics(
     elif dataset_cache_mode == "hf":
         cache = DatasetTransformationCache(config_hash=dataset_config_hash, hf_entity=hf_entity)
     return cache.load_or_transform_dataset(
-        dcs, tc, dataset_skip_cache=dataset_skip_cache, return_statistics=return_statistics
+        dcs,
+        tc,
+        dataset_skip_cache=dataset_skip_cache,
+        return_statistics=return_statistics,
+        keep_in_memory=keep_in_memory,
     )
 
 
@@ -2066,6 +2088,7 @@ def get_cached_dataset_tulu(
     hf_entity: Optional[str] = None,
     dataset_local_cache_dir: str = "local_dataset_cache",
     dataset_skip_cache: bool = False,
+    keep_in_memory: bool = False,
 ) -> Dataset:
     return get_cached_dataset_tulu_with_statistics(
         dataset_mixer_list,
@@ -2080,6 +2103,7 @@ def get_cached_dataset_tulu(
         dataset_local_cache_dir,
         dataset_skip_cache,
         return_statistics=False,
+        keep_in_memory=keep_in_memory,
     )[0]
 
 
