@@ -150,6 +150,8 @@ class FlatArguments:
     """The hash of the dataset configuration."""
     dataset_skip_cache: bool = False
     """Whether to skip the cache."""
+    keep_in_memory: bool = False
+    """Whether to keep loaded datasets in memory."""
     dataset_mix_dir: Optional[str] = field(
         default=None, metadata={"help": "The directory to save the mixed dataset to disk."}
     )
@@ -507,6 +509,7 @@ def main(args: FlatArguments, tc: TokenizerConfig):
             hf_entity=args.hf_entity,
             dataset_local_cache_dir=args.dataset_local_cache_dir,
             dataset_skip_cache=args.dataset_skip_cache,
+            keep_in_memory=args.keep_in_memory,
         )
         train_dataset = train_dataset.shuffle(seed=args.seed)
         train_dataset.set_format(type="pt")
