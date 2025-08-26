@@ -1178,24 +1178,43 @@ def sft_span_seach_mask_out(
     row: Dict[str, Any],
     tokenizer: PreTrainedTokenizer,
     max_seq_length: int,
-    asst_tag: str = "<|start_of_role|>assistant<|end_of_role|>",
     end_tag: str = "<|end_of_text|>",
     ignore_label: int = -100,
 ):
     """This function encodes a single example into a format that
     can be used for sft training (similar to sft_tulu_tokenize_and_truncate_v1).
     Instead of performing label masking iteratively, this function performs
-    masking via span search and can handle complex chat templates with thinking."""
+    masking via span search and can handle complex chat templates with thinking.
+    It dynamically determines the assistant tag based on the presence of a
+    <think> block in the assistant's response.
+    """
+    
+    messages = row["messages"]
+    if len(messages) == 0:
+        raise ValueError("messages field is empty.")
 
-    # Span label masking strategy
-    # - search spans asst_tag ... end_tag
-    # - all such spans are left unmasked
-    # - if an asst_tage is undetected due to tokenization issues
-    #   then a span can be erronously masked
-    # - to avoid this, use tags that are guarded by special tokens
+    # Dynamically determine the assistant tag based on the conversation content.
+    is_think_sample = False
+    for message in messages:
+        if message.get("role") == "assistant":
+            # Check for an explicit 'thought' field or a '<think>' tag in the content.
+            if message.get("thought") or (
+                isinstance(message.get("content"), str) and "<think>" in message["content"]
+            ):
+                is_think_sample = True
+                break # A single 'think' block defines the sample type.
+
+    # Setting the appropriate assistant tag for the masking strategy.
+    asst_tag = (
+        "<|start_of_role|>assistant<|end_of_role|>\n<think>\n"
+        if is_think_sample
+        else "<|start_of_role|>assistant<|end_of_role|>"
+    )
+
     def masking_strategy_span_search(input_ids: torch.tensor, tokenizer):
         # some prep
         match = lambda x, y: torch.all(x == y)
+        # `asst_tag` is now captured from the outer scope's dynamic variable
         _asst_tag = tokenizer.encode(asst_tag, add_special_tokens=False)
         _end_tag = tokenizer.encode(end_tag, add_special_tokens=False)
         _asst_tag = torch.tensor([_asst_tag])
@@ -1223,24 +1242,17 @@ def sft_span_seach_mask_out(
         else:
             raise ValueError(
                 f"asst_tag has {num_tokens_asst} tokens, and end_tag has {num_tokens_end} "
-                "tokens, whereas the example has {num_tokens} tokens. Either "
+                f"tokens, whereas the example has {num_tokens} tokens. Either "
                 "the example is invalid or wrong tags have been passed."
             )
 
         return labels
 
-    messages = row["messages"]
     additional_inputs = {}
     for k in ["tools", "documents"]:
         if k in row:
-            if k == "tools":
-                if isinstance(row[k], str) and len(row[k]) > 0:
-                    additional_inputs[k] = json.loads(row[k])
-            else:
-                additional_inputs[k] = row[k]
+            additional_inputs[k] = row[k]
 
-    if len(messages) == 0:
-        raise ValueError("messages field is empty.")
     input_ids = tokenizer.apply_chat_template(
         conversation=messages,
         tokenize=True,
