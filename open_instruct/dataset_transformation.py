@@ -1199,9 +1199,8 @@ def sft_span_seach_mask_out(
                     isinstance(message.get("content"), str) and "<think>" in message["content"]
                 ):
                     return True
-
         return False
-    
+
     def masking_strategy_span_search(input_ids: torch.tensor, tokenizer):
         # some prep
         match = lambda x, y: torch.all(x == y)
@@ -1264,7 +1263,7 @@ def sft_span_seach_mask_out(
         add_generation_prompt=False,
         **additional_inputs,
     )
-    
+
     asst_tag = asst_tag + "\n<think>\n" if is_think else asst_tag
 
     # Assume truncation if hitting the exact max length (for downstream data filtering)
