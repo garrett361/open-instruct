@@ -1189,29 +1189,19 @@ def sft_span_seach_mask_out(
     It dynamically determines the assistant tag based on the presence of a
     <think> block in the assistant's response.
     """
-    
-    messages = row["messages"]
-    if len(messages) == 0:
-        raise ValueError("messages field is empty.")
 
     # Dynamically determine the assistant tag based on the conversation content.
-    is_think_sample = False
-    for message in messages:
-        if message.get("role") == "assistant":
-            # Check for an explicit 'thought' field or a '<think>' tag in the content.
-            if message.get("thought") or (
-                isinstance(message.get("content"), str) and "<think>" in message["content"]
-            ):
-                is_think_sample = True
-                break # A single 'think' block defines the sample type.
+    def is_think(messages):
+        for message in messages:
+            if message.get("role") == "assistant":
+                # Check for an explicit 'thought' field or a '<think>' tag in the content.
+                if message.get("thought") or (
+                    isinstance(message.get("content"), str) and "<think>" in message["content"]
+                ):
+                    return True
 
-    # Setting the appropriate assistant tag for the masking strategy.
-    asst_tag = (
-        asst_tag + "\n<think>\n"
-        if is_think_sample
-        else asst_tag
-    )
-
+        return False
+    
     def masking_strategy_span_search(input_ids: torch.tensor, tokenizer):
         # some prep
         match = lambda x, y: torch.all(x == y)
@@ -1249,6 +1239,7 @@ def sft_span_seach_mask_out(
 
         return labels
 
+    messages = row["messages"]
     additional_inputs = {}
     for k in ["tools", "documents"]:
         if k in row:
@@ -1256,8 +1247,10 @@ def sft_span_seach_mask_out(
                 if isinstance(row[k], str) and len(row[k]) > 0:
                     additional_inputs[k] = json.loads(row[k])
             else:
-                additional_inputs[k] = row[k]
-            
+                additional_inputs[k] = row[k] 
+
+    if len(messages) == 0:
+        raise ValueError("messages field is empty.")
     input_ids = tokenizer.apply_chat_template(
         conversation=messages,
         tokenize=True,
@@ -1268,6 +1261,8 @@ def sft_span_seach_mask_out(
         add_generation_prompt=False,
         **additional_inputs,
     )
+    
+    asst_tag = asst_tag + "\n<think>\n" if is_think else asst_tag
 
     # Assume truncation if hitting the exact max length (for downstream data filtering)
     was_truncated = input_ids.shape[1] == max_seq_length
