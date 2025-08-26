@@ -1178,6 +1178,7 @@ def sft_span_seach_mask_out(
     row: Dict[str, Any],
     tokenizer: PreTrainedTokenizer,
     max_seq_length: int,
+    asst_tag: str = "<|start_of_role|>assistant<|end_of_role|>",
     end_tag: str = "<|end_of_text|>",
     ignore_label: int = -100,
 ):
@@ -1206,9 +1207,9 @@ def sft_span_seach_mask_out(
 
     # Setting the appropriate assistant tag for the masking strategy.
     asst_tag = (
-        "<|start_of_role|>assistant<|end_of_role|>\n<think>\n"
+        asst_tag + "\n<think>\n"
         if is_think_sample
-        else "<|start_of_role|>assistant<|end_of_role|>"
+        else asst_tag
     )
 
     def masking_strategy_span_search(input_ids: torch.tensor, tokenizer):
@@ -1251,8 +1252,12 @@ def sft_span_seach_mask_out(
     additional_inputs = {}
     for k in ["tools", "documents"]:
         if k in row:
-            additional_inputs[k] = row[k]
-
+            if k == "tools":
+                if isinstance(row[k], str) and len(row[k]) > 0:
+                    additional_inputs[k] = json.loads(row[k])
+            else:
+                additional_inputs[k] = row[k]
+            
     input_ids = tokenizer.apply_chat_template(
         conversation=messages,
         tokenize=True,
