@@ -1245,11 +1245,12 @@ def sft_span_seach_mask_out(
         if k in row:
             row_data = row[k]
             try:
-                    row_data = json.loads(row_data)
-            except json.decoder.JsonDecodeError:
-                     pass
-                    
-            additional_inputs[k] = row_data
+                if k == "tools" and isinstance(row_data, str) and row_data:
+                    additional_inputs[k] = json.loads(row_data)
+                else:
+                    additional_inputs[k] = row_data
+            except (json.JSONDecodeError, TypeError) as e:
+                print(f"Failed to parse '{k}': {e}")
 
     if len(messages) == 0:
         raise ValueError("messages field is empty.")
