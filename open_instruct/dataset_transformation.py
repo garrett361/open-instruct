@@ -1180,6 +1180,7 @@ def sft_span_seach_mask_out(
     max_seq_length: int,
     asst_tag: str = "<|start_of_role|>assistant<|end_of_role|>",
     end_tag: str = "<|end_of_text|>",
+    check_sample: bool = False,
     ignore_label: int = -100,
 ):
     """This function encodes a single example into a format that
@@ -1264,8 +1265,10 @@ def sft_span_seach_mask_out(
         **additional_inputs,
     )
 
-    asst_tag = asst_tag + "\n<think>\n" if is_think(messages) else asst_tag
-
+    if check_sample:
+        if is_think(messages):
+            asst_tag += "\n<think>\n"
+            
     # Assume truncation if hitting the exact max length (for downstream data filtering)
     was_truncated = input_ids.shape[1] == max_seq_length
     row["was_truncated"] = was_truncated
