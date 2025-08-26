@@ -1266,7 +1266,7 @@ def sft_span_seach_mask_out(
     if check_sample:
         if is_think(messages):
             asst_tag += "\n<think>\n"
-            
+
     # Assume truncation if hitting the exact max length (for downstream data filtering)
     was_truncated = input_ids.shape[1] == max_seq_length
     row["was_truncated"] = was_truncated
