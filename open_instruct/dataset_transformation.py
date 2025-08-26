@@ -1244,7 +1244,7 @@ def sft_span_seach_mask_out(
         if k in row:
             row_data = row[k]
             try:
-                if k == "tools" and isinstance(row_data, str) and row_data:
+                if k == "tools" and isinstance(row_data, str) and len(row_data) > 0:
                     additional_inputs[k] = json.loads(row_data)
                 else:
                     additional_inputs[k] = row_data
