@@ -1243,11 +1243,13 @@ def sft_span_seach_mask_out(
     additional_inputs = {}
     for k in ["tools", "documents"]:
         if k in row:
-            if k == "tools":
-                if isinstance(row[k], str) and len(row[k]) > 0:
-                    additional_inputs[k] = json.loads(row[k])
-            else:
-                additional_inputs[k] = row[k] 
+            row_data = row[k]
+            try:
+                    row_data = json.loads(row_data)
+            except json.decoder.JsonDecodeError:
+                     pass
+                    
+            additional_inputs[k] = row_data
 
     if len(messages) == 0:
         raise ValueError("messages field is empty.")
