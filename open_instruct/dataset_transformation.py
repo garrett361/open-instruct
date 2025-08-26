@@ -1264,7 +1264,7 @@ def sft_span_seach_mask_out(
         **additional_inputs,
     )
 
-    asst_tag = asst_tag + "\n<think>\n" if is_think else asst_tag
+    asst_tag = asst_tag + "\n<think>\n" if is_think(messages) else asst_tag
 
     # Assume truncation if hitting the exact max length (for downstream data filtering)
     was_truncated = input_ids.shape[1] == max_seq_length
