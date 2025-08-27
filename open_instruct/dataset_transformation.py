@@ -1270,8 +1270,8 @@ def sft_span_seach_mask_out(
     )
 
     if mask_think_tag and is_think(messages):
-        # if think tag is not to be masked, then it is to be included in the asst_tag
-        # which by token matching logic, will cause it to be omitted from the mask span.
+        # if think tag is to be masked and the message is a thinking sample, 
+        # then the think token is to be included in the asst_tag
         asst_tag += think_tag
 
     # Assume truncation if hitting the exact max length (for downstream data filtering)
