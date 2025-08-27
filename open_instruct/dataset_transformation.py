@@ -1187,9 +1187,9 @@ def sft_span_seach_mask_out(
     """This function encodes a single example into a format that
     can be used for sft training (similar to sft_tulu_tokenize_and_truncate_v1).
     Instead of performing label masking iteratively, this function performs
-    masking via span search and can handle complex chat templates with thinking.
-    It dynamically determines the assistant tag based on the presence of a
-    <think> block in the assistant's response.
+    masking via span search and can handle complex chat templates with thinking. If the think_tag
+    is to be excluded from the masking, please provide it appropriately and also set mask_think_tag=False
+    """
     """
 
     # Dynamically determine the assistant tag based on the conversation content.
