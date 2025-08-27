@@ -1270,7 +1270,7 @@ def sft_span_seach_mask_out(
     )
 
     if mask_think_tag and is_think(messages):
-        # if think tag is to be masked and the message is a thinking sample, 
+        # if think tag is to be masked and the message is a thinking sample,
         # then the think token is to be included in the asst_tag
         asst_tag += think_tag
 
