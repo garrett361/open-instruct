@@ -1187,9 +1187,9 @@ def sft_span_seach_mask_out(
     """This function encodes a single example into a format that
     can be used for sft training (similar to sft_tulu_tokenize_and_truncate_v1).
     Instead of performing label masking iteratively, this function performs
-    masking via span search and can handle complex chat templates with thinking. If the think_tag
-    is to be excluded from the masking, please provide it appropriately and also set mask_think_tag=False
-    """
+    masking via span search and can handle complex chat templates with thinking.
+    It dynamically determines the assistant tag based on the presence of a
+    <think> block in the assistant's response.
     """
 
     # Dynamically determine the assistant tag based on the conversation content.
@@ -1206,7 +1206,12 @@ def sft_span_seach_mask_out(
     def masking_strategy_span_search(input_ids: torch.tensor, tokenizer):
         # some prep
         match = lambda x, y: torch.all(x == y)
-        # `asst_tag` is now captured from the outer scope's dynamic variable
+        # `asst_tag` is captured from the outer scope's dynamic variable
+
+        # By default, tokenizers for models like LLaMA, Mistral, and Phi-2 have add_bos_token=True, which means they # automatically prepend a BOS token. This would shift all token positions by 1 and break any span matching logic.
+
+        # Other models like Qwen, etc., have add_bos_token=False by default, so they behave differently — leading to # inconsistent behavior across model families if not explicitly handled.
+
         _asst_tag = tokenizer.encode(asst_tag, add_special_tokens=False)
         _end_tag = tokenizer.encode(end_tag, add_special_tokens=False)
         _asst_tag = torch.tensor([_asst_tag])
@@ -1264,9 +1269,10 @@ def sft_span_seach_mask_out(
         **additional_inputs,
     )
 
-    if mask_think_tag:
-        if is_think(messages):
-            asst_tag += think_tag
+    if mask_think_tag and is_think(messages):
+        # if think tag is not to be masked, then it is to be included in the asst_tag
+        # which by token matching logic, will cause it to be omitted from the mask span.
+        asst_tag += think_tag
 
     # Assume truncation if hitting the exact max length (for downstream data filtering)
     was_truncated = input_ids.shape[1] == max_seq_length
