@@ -499,7 +499,10 @@ def main(args: FlatArguments, tc: TokenizerConfig):
             os.makedirs(args.output_dir, exist_ok=True)
 
     accelerator.wait_for_everyone()
-
+    
+    # ------------------------------------------------------------
+    # prepare training dataset
+    
     if args.dataset_mixer is not None:
         args.dataset_mixer_list = [item for pair in args.dataset_mixer.items() for item in pair]
     with accelerator.main_process_first():

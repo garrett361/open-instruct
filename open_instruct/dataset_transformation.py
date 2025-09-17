@@ -1396,7 +1396,7 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
         fn_kwargs.update(fn_args)
 
         # perform the transformation
-        print(f'== Perform transformation {i+1}/{len(dc.transform_fn)} {fn.__name__} with fn_args {fn_args}...')
+        print(f'\n== Perform transformation {i+1}/{len(dc.transform_fn)} {fn.__name__} with fn_args {fn_args}...')
         target_columns = dataset.column_names if dc.target_columns is None else dc.target_columns
         if fn_type == "map":
             dataset = dataset.map(
@@ -1547,14 +1547,16 @@ class LocalDatasetTransformationCache:
         # Transform each dataset
         transformed_datasets = []
         total_left_samples = 0
+        # loop through each dataset and transform
         for i,dc in enumerate(dcs):
-            print(f"\n\n**** {i+1}. Processing `{dc.dataset_name}` having {len(dc.dataset):,} samples...")
+            print(f"\n\n**** {i+1}. Processing `{dc.dataset_name}` with {len(dc.dataset):,} selected top samples...")
             start_time = time.time()
+            # transform/process current dc:
             dataset = get_dataset_v1(dc, tc)
             total_tokens, avg_tokens, std_tokens = count_total_tokens(dataset)
             duration = time.time() - start_time
             print(
-                f"\n**** Summary for {dc.dataset_name}:\n"
+                f"\n**** Summary for {i+1}. {dc.dataset_name}:\n"
                 f" - Original samples: {len(dc.dataset):,}\n"
                 f" - Samples after processing: {len(dataset):,}\n"
                 f" - Total tokens: {total_tokens:,}\n"
@@ -1635,6 +1637,7 @@ def get_cached_dataset_tulu(
                     f"dataset_mixer_list_splits length must be the same as dataset_mixer_list: {len(dataset_mixer_list_splits)=} != {len(dataset_mixer_list)=}"
                 )
         assert len(dataset_mixer_list) % 2 == 0, f"Data mixer list length is not even: {dataset_mixer_list}"
+        
         for i in range(0, len(dataset_mixer_list), 2):
             dataset_name = dataset_mixer_list[i]
             frac_or_num_samples = dataset_mixer_list[i + 1]
@@ -1651,12 +1654,18 @@ def get_cached_dataset_tulu(
                 transform_fn_args=transform_fn_args,
                 target_columns=target_columns,
             )
+            
+            # if frac_or_num_samples is > 1, treat it as num_samples, otherwise treat it as fraction and convert to num_samples
             if frac_or_num_samples > 1.0:
                 new_range = int(frac_or_num_samples)
             else:
                 new_range = int(frac_or_num_samples * len(dataset_config.dataset))
+                
+            print(f"\n==> Adding dataset {dataset_name} with frac/num_samples {frac_or_num_samples} => {new_range:,} samples")    
+            # update the dataset with new (shorter) range (top samples)
             dataset_config.update_range(new_range)
             dcs.append(dataset_config)
+        # generate hashing code based on values stored in dcs and tc
         dataset_config_hash = compute_config_hash(dcs, tc)
     if dataset_cache_mode == "local":
         cache = LocalDatasetTransformationCache(

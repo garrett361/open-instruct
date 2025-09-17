@@ -712,13 +712,14 @@ def is_checkpoint_folder(dir: str, folder: str) -> bool:
 
 
 def safe_remove(func, path, exc_info):
-    # Ignore FileNotFoundError (errno.ENOENT)
+    # Ignore FileNotFoundError (errno.ENOENT) (other rank or process might have already deleted the file)
     # This prevents the distributed training runs from crashing if a file (like random_states_*.pkl) is already deleted by another process before rmtree() tries to remove it.
-    if not (isinstance(exc_info[1], FileNotFoundError) or getattr(exc_info[1], 'errno', None) == errno.ENOENT):
-        logger.error(f"Error deleting {path}: {exc_info[1]}")
-        raise exc_info[1]
+    err = exc_info[1]
+    if isinstance(err, (FileNotFoundError, NotADirectoryError)) or getattr(err, 'errno', None) in (errno.ENOENT, errno.ENOTDIR):
+        logger.warning(f"Ignored missing or invalid file during deletion: {path}")
     else:
-        logger.warning(f"Ignored missing file during deletion: {path}")
+        logger.error(f"Unhandled error while deleting {path}: {err}")
+        raise err
 
 def clean_last_n_checkpoints(output_dir: str, keep_last_n_checkpoints: int) -> None:
     # remove the last checkpoint to save space
