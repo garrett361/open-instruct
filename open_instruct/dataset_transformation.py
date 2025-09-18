@@ -1696,8 +1696,8 @@ class DatasetConfig:
             indices.extend(extra_indices.tolist())
 
         print(
-            f"Upsampling dataset {self.dataset_name} from {original_size} to {target_size} samples "
-            f"({full_repeats} full repeats + {extra_samples} random samples)"
+            f"\n Upsampling dataset {self.dataset_name} from {original_size:,} to {target_size:,} samples "
+            f"({full_repeats} full repeats + {extra_samples:,} random samples)"
         )
 
         return self.dataset.select(indices)
@@ -1744,7 +1744,7 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
                 fn_kwargs=fn_kwargs,
                 remove_columns=[col for col in dataset.column_names if col not in target_columns],
                 num_proc=get_num_proc(len(dataset), num_proc, APPLY_CHAT_TEMPLATE_EXAMPLE_PER_SECOND_PER_CPU),
-                load_from_cache_file=False,  # force running from scratch (to ensure consistency across multiple datafiles)
+                load_from_cache_file=True,  # set False to force running from scratch (to ensure consistency across multiple datafiles)
             )
         elif fn_type == "filter":
             dataset = dataset.filter(
@@ -1918,23 +1918,12 @@ class LocalDatasetTransformationCache:
         dataset_order = []
         for i, dc in enumerate(dcs):
             initial_size = len(dc.dataset) if dc.dataset else 0
-            print(f"\n\n**** {i+1}. Processing `{dc.dataset_name}` with {len(dc.dataset):,} selected top samples...")
+            print(f"\n\n**** {i+1}. Processing `{dc.dataset_name}` with {len(dc.dataset):,} samples...")
             start_time = time.time()
             dataset = get_dataset_v1(dc, tc)
-            total_tokens, avg_tokens, std_tokens = count_total_tokens(dataset)
             duration = time.time() - start_time
-            print(
-                f"\n**** Summary for {i + 1}. {dc.dataset_name}:\n"
-                f" - No.of input samples: {len(dc.dataset):,}\n"
-                f" - No. of output samples (after processing): {len(dataset):,}\n"
-                f" - Total tokens: {total_tokens:,}\n"
-                f" - Avg tokens per sample: {avg_tokens:,.1f}\n"
-                f" - Stddev tokens per sample: {std_tokens:.2f}\n"
-                f" - Processing time: {duration:,.2f} seconds\n"
-            )
             total_left_samples += len(dataset)
             transformed_datasets.append(dataset)
-
 
             # Collect statistics for this dataset
             stats = {
@@ -1945,7 +1934,7 @@ class LocalDatasetTransformationCache:
                 "instances_filtered": initial_size - len(dataset),
                 "frac_or_num_samples": dc.frac_or_num_samples,
                 "original_dataset_size": dc.original_dataset_size,
-                "process_time_in_second": int(duration),
+                "process_time_in_second": duration,
                 "is_upsampled": dc.is_upsampled,
                 "upsampling_factor": dc.dataset_range / dc.original_dataset_size
                 if dc.original_dataset_size and dc.original_dataset_size > 0
@@ -1969,15 +1958,14 @@ class LocalDatasetTransformationCache:
             dataset_statistics.append(stats)
             dataset_order.append(dc.dataset_name)
             print(
-                f"\n**** Summary for {stats['dataset_name']} ({stats['dataset_split']}) ****\n"
+                f"\n**** Summary for {i+1}. {stats['dataset_name']} ({stats['dataset_split']}) ****\n"
+                f" - Original dataset size: {stats['original_dataset_size']:,}\n"
                 f" - Initial instances: {stats['initial_instances']:,}\n"
+                f" - Fraction or number of samples: {stats['frac_or_num_samples']}\n"
+                f" - Is upsampled: {stats['is_upsampled']} - Upsampling factor: {stats['upsampling_factor']:.2f}\n"
                 f" - Final instances: {stats['final_instances']:,}\n"
                 f" - Instances filtered: {stats['instances_filtered']:,}\n"
-                f" - Fraction or number of samples: {stats['frac_or_num_samples']}\n"
-                f" - Original dataset size: {stats['original_dataset_size']:,}\n"
-                f" - Is upsampled: {stats['is_upsampled']}\n"
-                f" - Upsampling factor: {stats['upsampling_factor']:.2f}\n"
-                f" - Processing time: {stats['process_time_in_second']:,} seconds\n"
+                f" - Processing time: {stats['process_time_in_second']:,.2f} seconds\n"
                 + (
                     f" - Total tokens: {stats['total_tokens']:,}\n"
                     f" - Trainable tokens: {stats['trainable_tokens']:,}\n"
@@ -2017,20 +2005,6 @@ class LocalDatasetTransformationCache:
         return loaded_dataset, None
 
 
-def count_total_tokens(dataset):
-    # count num.tokens per ds:
-    def get_token_count(row):
-        return {"num_tokens": len(row[INPUT_IDS_KEY])}
-
-    num_proc = int(float(os.environ.get("BEAKER_ASSIGNED_CPU_COUNT", multiprocessing.cpu_count())))
-    token_counts = dataset.map(get_token_count, num_proc=num_proc)
-    total_tokens = sum(token_counts["num_tokens"])
-    token_lengths = torch.tensor(token_counts["num_tokens"], dtype=torch.float)
-
-    total_tokens = token_lengths.sum().item()
-    avg_tokens = token_lengths.mean().item()
-    std_tokens = token_lengths.std(unbiased=False).item()
-    return total_tokens, avg_tokens, std_tokens
 def get_cached_dataset(
     dcs: List[DatasetConfig],
     tc: TokenizerConfig,
