@@ -1233,7 +1233,12 @@ def sft_span_seach_mask_out(
     additional_inputs = {}
     for k in ["tools", "documents"]:
         if k in row:
-            additional_inputs[k] = row[k]
+            if k == "tools":
+                if isinstance(row[k], str) and len(row[k]) > 0:
+                    additional_inputs[k] = json.loads(row[k])
+            else:
+                additional_inputs[k] = row[k]  
+            # additional_inputs[k] = row[k]
 
     if len(messages) == 0:
         raise ValueError("messages field is empty.")
@@ -1338,10 +1343,6 @@ def sft_tulu_filter_truncated_v1(row: Dict[str, Any], tokenizer: PreTrainedToken
         any(x != -100 for x in row[LABELS_KEY])  # keep if at least one valid label
         and not row.get("was_truncated", False)  # and was not truncated
     )
-
-def sft_tulu_filter_nothing(row: Dict[str, Any], tokenizer: PreTrainedTokenizer):
-    # To not apply any data filtering
-    return True
 
 
 def preference_tokenize_v1(row: Dict[str, Any], tokenizer: PreTrainedTokenizer):
@@ -1577,7 +1578,6 @@ TRANSFORM_FNS = {
     "sft_tulu_tokenize_and_truncate_v1": (sft_tulu_tokenize_and_truncate_v1, "map"),
     "sft_span_seach_mask_out": (sft_span_seach_mask_out, "map"),
     "sft_tulu_filter_v1": (sft_tulu_filter_v1, "filter"),
-    "sft_tulu_filter_nothing": (sft_tulu_filter_nothing, "filter"),
     "sft_tulu_filter_truncated_v1": (sft_tulu_filter_truncated_v1, "filter"),
     "preference_tokenize_v1": (preference_tokenize_v1, "map"),
     "preference_filter_v1": (preference_filter_v1, "filter"),
@@ -1696,8 +1696,8 @@ class DatasetConfig:
             indices.extend(extra_indices.tolist())
 
         print(
-            f"\n Upsampling dataset {self.dataset_name} from {original_size:,} to {target_size:,} samples "
-            f"({full_repeats} full repeats + {extra_samples:,} random samples)"
+            f"Upsampling dataset {self.dataset_name} from {original_size} to {target_size} samples "
+            f"({full_repeats} full repeats + {extra_samples} random samples)"
         )
 
         return self.dataset.select(indices)
@@ -1714,17 +1714,17 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
     dataset = dc.dataset
 
     # Add dataset source field to track origin after shuffling
-    dataset = dataset.map(
-        lambda example: {**example, DATASET_ORIGIN_KEY: dc.dataset_name},
-        num_proc=num_proc,
-        desc=f"Adding dataset source field for {dc.dataset_name}",
-    )
+    # dataset = dataset.map(
+    #     lambda example: {**example, DATASET_ORIGIN_KEY: dc.dataset_name},
+    #     num_proc=num_proc,
+    #     desc=f"Adding dataset source field for {dc.dataset_name}",
+    # )
     for i, (fn_name, fn_args) in enumerate(zip(dc.transform_fn, dc.transform_fn_args)):
         fn, fn_type = TRANSFORM_FNS[fn_name]
         # always pass in tokenizer and other args if needed
         fn_kwargs = {"tokenizer": tokenizer}
         if tc.transform_fn_kwargs:
-            fn_params = signature(fn).parameters
+            fn_params = signature(fn_name).parameters
             extra_kwargs = {k: v for k, v in tc.transform_fn_kwargs.items() if k in fn_params}
             if extra_kwargs:
                 print(f"Using kwargs {extra_kwargs} for data transform fn {fn_name}.")
@@ -1776,11 +1776,7 @@ class DatasetTransformationCache:
         self.hf_entity = hf_entity or hf_whoami()["name"]
 
     def load_or_transform_dataset(
-        self,
-        dcs: List[DatasetConfig],
-        tc: TokenizerConfig,
-        dataset_skip_cache: bool = False,
-        keep_in_memory: bool = False,
+        self, dcs: List[DatasetConfig], tc: TokenizerConfig, dataset_skip_cache: bool = False
     ) -> Dataset:
         """Load dataset from cache if it exists, otherwise transform and cache it."""
         repo_name = f"{self.hf_entity}/dataset-mix-cached"
@@ -1795,12 +1791,7 @@ class DatasetTransformationCache:
                 print("dataset_skip_cache is True, so we will not load the dataset from cache")
             else:
                 # Use the split from the first dataset config as default
-                return load_dataset(
-                    repo_name,
-                    split=DEFAULT_SPLIT_FOR_CACHED_DATASET,
-                    revision=self.config_hash,
-                    keep_in_memory=keep_in_memory,
-                )
+                return load_dataset(repo_name, split=DEFAULT_SPLIT_FOR_CACHED_DATASET, revision=self.config_hash)
 
         print(f"Cache not found, transforming datasets...")
 
@@ -1853,9 +1844,7 @@ This is a cached dataset produced by https://github.com/allenai/open-instruct
 
         # NOTE: Load the dataset again to make sure it's downloaded to the HF cache
         print(f"✅ Found cached dataset at https://huggingface.co/datasets/{repo_name}/tree/{self.config_hash}")
-        return load_dataset(
-            repo_name, split=DEFAULT_SPLIT_FOR_CACHED_DATASET, revision=self.config_hash, keep_in_memory=keep_in_memory
-        )
+        return load_dataset(repo_name, split=DEFAULT_SPLIT_FOR_CACHED_DATASET, revision=self.config_hash)
 
 
 class LocalDatasetTransformationCache:
@@ -1888,7 +1877,6 @@ class LocalDatasetTransformationCache:
         tc: TokenizerConfig,
         dataset_skip_cache: bool = False,
         return_statistics: bool = False,
-        keep_in_memory: bool = False,
     ) -> Union[Dataset, Tuple[Dataset, Dict[str, Any]]]:
         """Load dataset from local cache if it exists, otherwise transform and cache it locally."""
         cache_path = self.get_cache_path()
@@ -1896,7 +1884,7 @@ class LocalDatasetTransformationCache:
         # Check if the cache exists
         if os.path.exists(cache_path) and not dataset_skip_cache:
             print(f"✅ Found cached dataset at {cache_path}")
-            dataset = Dataset.load_from_disk(cache_path, keep_in_memory=keep_in_memory)
+            dataset = Dataset.load_from_disk(cache_path, keep_in_memory=True)
             if return_statistics:
                 # Load statistics from cache if available
                 stats_path = os.path.join(cache_path, "dataset_statistics.json")
@@ -1913,16 +1901,14 @@ class LocalDatasetTransformationCache:
 
         # Transform each dataset and collect statistics
         transformed_datasets = []
-        total_left_samples = 0
         dataset_statistics = []
         dataset_order = []
         for i, dc in enumerate(dcs):
             initial_size = len(dc.dataset) if dc.dataset else 0
-            print(f"\n\n**** {i+1}. Processing `{dc.dataset_name}` with {len(dc.dataset):,} samples...")
+            print(f"\n\n**** {i + 1}. Processing `{dc.dataset_name}` having {len(dc.dataset):,} samples...")
             start_time = time.time()
             dataset = get_dataset_v1(dc, tc)
             duration = time.time() - start_time
-            total_left_samples += len(dataset)
             transformed_datasets.append(dataset)
 
             # Collect statistics for this dataset
@@ -1934,7 +1920,6 @@ class LocalDatasetTransformationCache:
                 "instances_filtered": initial_size - len(dataset),
                 "frac_or_num_samples": dc.frac_or_num_samples,
                 "original_dataset_size": dc.original_dataset_size,
-                "process_time_in_second": duration,
                 "is_upsampled": dc.is_upsampled,
                 "upsampling_factor": dc.dataset_range / dc.original_dataset_size
                 if dc.original_dataset_size and dc.original_dataset_size > 0
@@ -1957,25 +1942,7 @@ class LocalDatasetTransformationCache:
 
             dataset_statistics.append(stats)
             dataset_order.append(dc.dataset_name)
-            print(
-                f"\n**** Summary for {i+1}. {stats['dataset_name']} ({stats['dataset_split']}) ****\n"
-                f" - Original dataset size: {stats['original_dataset_size']:,}\n"
-                f" - Initial instances: {stats['initial_instances']:,}\n"
-                f" - Fraction or number of samples: {stats['frac_or_num_samples']}\n"
-                f" - Is upsampled: {stats['is_upsampled']} - Upsampling factor: {stats['upsampling_factor']:.2f}\n"
-                f" - Final instances: {stats['final_instances']:,}\n"
-                f" - Instances filtered: {stats['instances_filtered']:,}\n"
-                f" - Processing time: {stats['process_time_in_second']:,.2f} seconds\n"
-                + (
-                    f" - Total tokens: {stats['total_tokens']:,}\n"
-                    f" - Trainable tokens: {stats['trainable_tokens']:,}\n"
-                    f" - Avg tokens per instance: {stats['avg_tokens_per_instance']:,.1f}\n"
-                    if "total_tokens" in stats
-                    else ""
-                )
-            )
 
-        print(f"\n**** TOTAL NUM.SAMPLES AFTER DATA TRANSFORMATION: {total_left_samples:,} ****\n")
         # Combine datasets
         combined_dataset = concatenate_datasets(transformed_datasets)
 
@@ -1999,7 +1966,7 @@ class LocalDatasetTransformationCache:
         print(f"🚀 Saved transformed dataset to {cache_path}")
         print(f"✅ Found cached dataset at {cache_path}")
 
-        loaded_dataset = Dataset.load_from_disk(cache_path, keep_in_memory=keep_in_memory)
+        loaded_dataset = Dataset.load_from_disk(cache_path, keep_in_memory=True)
         if return_statistics:
             return loaded_dataset, all_statistics
         return loaded_dataset, None
@@ -2012,18 +1979,13 @@ def get_cached_dataset(
     dataset_local_cache_dir: Optional[str] = None,
     dataset_skip_cache: bool = False,
     return_statistics: bool = False,
-    keep_in_memory: bool = False,
 ) -> Union[Dataset, Tuple[Dataset, Dict[str, Any]]]:
     if dataset_local_cache_dir is not None:
         cache = LocalDatasetTransformationCache(dataset_local_cache_dir=dataset_local_cache_dir)
     else:
         cache = DatasetTransformationCache(hf_entity=hf_entity)
     return cache.load_or_transform_dataset(
-        dcs,
-        tc,
-        dataset_skip_cache=dataset_skip_cache,
-        return_statistics=return_statistics,
-        keep_in_memory=keep_in_memory,
+        dcs, tc, dataset_skip_cache=dataset_skip_cache, return_statistics=return_statistics
     )[0]
 
 
@@ -2040,7 +2002,6 @@ def get_cached_dataset_tulu_with_statistics(
     dataset_local_cache_dir: str = "local_dataset_cache",
     dataset_skip_cache: bool = False,
     return_statistics: bool = False,
-    keep_in_memory: bool = False,
 ) -> Union[Dataset, Tuple[Dataset, Dict[str, Any]]]:
     dcs = []
     if dataset_config_hash is None:
@@ -2094,11 +2055,7 @@ def get_cached_dataset_tulu_with_statistics(
     elif dataset_cache_mode == "hf":
         cache = DatasetTransformationCache(config_hash=dataset_config_hash, hf_entity=hf_entity)
     return cache.load_or_transform_dataset(
-        dcs,
-        tc,
-        dataset_skip_cache=dataset_skip_cache,
-        return_statistics=return_statistics,
-        keep_in_memory=keep_in_memory,
+        dcs, tc, dataset_skip_cache=dataset_skip_cache, return_statistics=return_statistics
     )
 
 
@@ -2114,7 +2071,6 @@ def get_cached_dataset_tulu(
     hf_entity: Optional[str] = None,
     dataset_local_cache_dir: str = "local_dataset_cache",
     dataset_skip_cache: bool = False,
-    keep_in_memory: bool = False,
 ) -> Dataset:
     return get_cached_dataset_tulu_with_statistics(
         dataset_mixer_list,
@@ -2129,7 +2085,6 @@ def get_cached_dataset_tulu(
         dataset_local_cache_dir,
         dataset_skip_cache,
         return_statistics=False,
-        keep_in_memory=keep_in_memory,
     )[0]
 
 

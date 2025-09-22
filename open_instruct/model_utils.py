@@ -460,17 +460,19 @@ def save_with_accelerate(
         if accelerator.is_main_process:
             unwrapped_model.save_pretrained(output_dir, state_dict=state_dict)
     else:
-        unwrapped_model.save_pretrained(
-            output_dir,
-            is_main_process=accelerator.is_main_process,
-            save_function=accelerator.save,
-            state_dict=state_dict,
-            safe_serialization=safe_serialization,
-        )
+        if accelerator.is_main_process:
+            unwrapped_model.save_pretrained(
+                output_dir,
+                is_main_process=accelerator.is_main_process,
+                save_function=accelerator.save,
+                state_dict=state_dict,
+                safe_serialization=safe_serialization,
+            )
 
     if accelerator.is_main_process:
         tokenizer.save_pretrained(output_dir)
     # customize model card (TODO (Costa): this can be prettier)
+    accelerator.wait_for_everyone()
 
 
 @torch.compile(dynamic=True)
