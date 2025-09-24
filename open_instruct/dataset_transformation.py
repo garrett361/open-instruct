@@ -1178,7 +1178,7 @@ def sft_span_seach_mask_out(
     row: Dict[str, Any],
     tokenizer: PreTrainedTokenizer,
     max_seq_length: int,
-    asst_tag: str = "<|start_of_role|>assistant<|end_of_role|>\n<think>\n",
+    asst_tag: str = "<|start_of_role|>assistant<|end_of_role|>",
     end_tag: str = "<|end_of_text|>",
     think_tag: str = "\n<think>\n",
     append_think_tag: bool = False,
@@ -1198,7 +1198,7 @@ def sft_span_seach_mask_out(
             if message.get("role") == "assistant":
                 # Check for an explicit 'thought' field or a '<think>' tag in the content.
                 if message.get("thought") or (
-                    isinstance(message.get("content"), str) and "<think>" in message["content"]
+                    isinstance(message.get("content"), str) and think_tag.strip() in message["content"]
                 ):
                     return True
         return False
