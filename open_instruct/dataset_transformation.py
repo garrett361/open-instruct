@@ -1178,10 +1178,10 @@ def sft_span_seach_mask_out(
     row: Dict[str, Any],
     tokenizer: PreTrainedTokenizer,
     max_seq_length: int,
-    asst_tag: str = "<|start_of_role|>assistant<|end_of_role|>",
+    asst_tag: str = "<|start_of_role|>assistant<|end_of_role|>\n<think>\n",
     end_tag: str = "<|end_of_text|>",
     think_tag: str = "\n<think>\n",
-    mask_think_tag: bool = False,
+    append_think_tag: bool = False,
     ignore_label: int = -100,
 ):
     """This function encodes a single example into a format that
@@ -1193,7 +1193,7 @@ def sft_span_seach_mask_out(
     """
 
     # Dynamically determine the assistant tag based on the conversation content.
-    def is_think(messages):
+    def has_thinking_content(messages):
         for message in messages:
             if message.get("role") == "assistant":
                 # Check for an explicit 'thought' field or a '<think>' tag in the content.
@@ -1207,9 +1207,7 @@ def sft_span_seach_mask_out(
         # some prep
         match = lambda x, y: torch.all(x == y)
         # `asst_tag` is captured from the outer scope's dynamic variable
-
         # By default, tokenizers for models like LLaMA, Mistral, and Phi-2 have add_bos_token=True, which means they # automatically prepend a BOS token. This would shift all token positions by 1 and break any span matching logic.
-
         # Other models like Qwen, etc., have add_bos_token=False by default, so they behave differently — leading to # inconsistent behavior across model families if not explicitly handled.
 
         _asst_tag = tokenizer.encode(asst_tag, add_special_tokens=False)
@@ -1269,9 +1267,9 @@ def sft_span_seach_mask_out(
         **additional_inputs,
     )
 
-    if mask_think_tag and is_think(messages):
-        # if think tag is to be masked and the message is a thinking sample,
-        # then the think token is to be included in the asst_tag
+    if append_think_tag and has_thinking_content(messages):
+        # if user has specified appendind think tag to base asst tag and the specific row's message column is a thinking sample,
+        # then <think> token is to be included in the asst_tag
         asst_tag += think_tag
 
     # Assume truncation if hitting the exact max length (for downstream data filtering)
