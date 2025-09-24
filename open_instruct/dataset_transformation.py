@@ -1269,7 +1269,7 @@ def sft_span_seach_mask_out(
 
     # If the user has set `append_think_tag=True` and the current sample is a thinking sample,
     # then the <think> token is appended to the base `asst_tag` used for span matching.
-    # This causes the <think> tag to be masked along with the asst_tag 
+    # This causes the <think> tag to be masked along with the asst_tag
     if append_think_tag:
         if has_thinking_content(messages):
             asst_tag += think_tag
