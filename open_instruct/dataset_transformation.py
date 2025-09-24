@@ -1267,10 +1267,11 @@ def sft_span_seach_mask_out(
         **additional_inputs,
     )
 
-    if append_think_tag and has_thinking_content(messages):
-        # if user has specified appendind think tag to base asst tag and the specific row's message column is a thinking sample,
-        # then <think> token is to be included in the asst_tag
-        asst_tag += think_tag
+    # if user has specified appendind think tag to base asst tag and the specific row's message column is a thinking sample,
+    # then <think> token is to be included in the asst_tag
+    if append_think_tag:
+        if has_thinking_content(messages):
+            asst_tag += think_tag
 
     # Assume truncation if hitting the exact max length (for downstream data filtering)
     was_truncated = input_ids.shape[1] == max_seq_length
