@@ -1181,7 +1181,7 @@ def sft_span_seach_mask_out(
     asst_tag: str = "<|start_of_role|>assistant<|end_of_role|>",
     end_tag: str = "<|end_of_text|>",
     think_tag: str = "\n<think>\n",
-    append_think_tag: bool = False,
+    mask_think_tag: bool = False,
     ignore_label: int = -100,
 ):
     """This function encodes a single example into a format that
@@ -1267,12 +1267,11 @@ def sft_span_seach_mask_out(
         **additional_inputs,
     )
 
-    # If the user has set `append_think_tag=True` and the current sample is a thinking sample,
+    # If the user has set `mask_think_tag=True` and the current sample is a thinking sample,
     # then the <think> token is appended to the base `asst_tag` used for span matching.
     # This causes the <think> tag to be masked along with the asst_tag
-    if append_think_tag:
-        if has_thinking_content(messages):
-            asst_tag += think_tag
+    if mask_think_tag and has_thinking_content(messages):
+        asst_tag += think_tag
 
     # Assume truncation if hitting the exact max length (for downstream data filtering)
     was_truncated = input_ids.shape[1] == max_seq_length
