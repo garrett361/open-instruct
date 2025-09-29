@@ -1666,6 +1666,7 @@ class DatasetConfig:
     frac_or_num_samples: Optional[Union[int, float]] = None
     original_dataset_size: Optional[int] = None
     is_upsampled: bool = False
+    add_data_source: bool = False
 
     def __post_init__(self):
         # if the file exists locally, use the local file
@@ -1733,12 +1734,13 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
     tokenizer = tc.tokenizer
     dataset = dc.dataset
 
-    # Add dataset source field to track origin after shuffling
-    dataset = dataset.map(
-        lambda example: {**example, DATASET_ORIGIN_KEY: dc.dataset_name},
-        num_proc=num_proc,
-        desc=f"Adding dataset source field for {dc.dataset_name}",
-    )
+    if dc.add_data_source:
+        # Add dataset source field to track origin after shuffling
+        dataset = dataset.map(
+            lambda example: {**example, DATASET_ORIGIN_KEY: dc.dataset_name},
+            num_proc=num_proc,
+            desc=f"Adding dataset source field for {dc.dataset_name}",
+        )
     for i, (fn_name, fn_args) in enumerate(zip(dc.transform_fn, dc.transform_fn_args)):
         fn, fn_type = TRANSFORM_FNS[fn_name]
         # always pass in tokenizer and other args if needed
