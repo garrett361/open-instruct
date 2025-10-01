@@ -1364,6 +1364,10 @@ def sft_tulu_filter_truncated_v1(row: Dict[str, Any], tokenizer: PreTrainedToken
         and not row.get("was_truncated", False)  # and was not truncated
     )
 
+def sft_tulu_filter_nothing(row: Dict[str, Any], tokenizer: PreTrainedTokenizer):
+    # To not apply any data filtering
+    return True
+
 
 def preference_tokenize_v1(row: Dict[str, Any], tokenizer: PreTrainedTokenizer):
     # Extract prompt (all messages except the last one)
@@ -1598,6 +1602,7 @@ TRANSFORM_FNS = {
     "sft_tulu_tokenize_and_truncate_v1": (sft_tulu_tokenize_and_truncate_v1, "map"),
     "sft_span_seach_mask_out": (sft_span_seach_mask_out, "map"),
     "sft_tulu_filter_v1": (sft_tulu_filter_v1, "filter"),
+    "sft_tulu_filter_nothing": (sft_tulu_filter_nothing, "filter"),
     "sft_tulu_filter_truncated_v1": (sft_tulu_filter_truncated_v1, "filter"),
     "preference_tokenize_v1": (preference_tokenize_v1, "map"),
     "preference_filter_v1": (preference_filter_v1, "filter"),
@@ -1717,8 +1722,8 @@ class DatasetConfig:
             indices.extend(extra_indices.tolist())
 
         print(
-            f"Upsampling dataset {self.dataset_name} from {original_size} to {target_size} samples "
-            f"({full_repeats} full repeats + {extra_samples} random samples)"
+            f"\n Upsampling dataset {self.dataset_name} from {original_size:,} to {target_size:,} samples "
+            f"({full_repeats} full repeats + {extra_samples:,} random samples)"
         )
 
         return self.dataset.select(indices)
@@ -1935,14 +1940,16 @@ class LocalDatasetTransformationCache:
 
         # Transform each dataset and collect statistics
         transformed_datasets = []
+        total_left_samples = 0
         dataset_statistics = []
         dataset_order = []
         for i, dc in enumerate(dcs):
             initial_size = len(dc.dataset) if dc.dataset else 0
-            print(f"\n\n**** {i + 1}. Processing `{dc.dataset_name}` having {len(dc.dataset):,} samples...")
+            print(f"\n\n**** {i+1}. Processing `{dc.dataset_name}` with {len(dc.dataset):,} samples...")
             start_time = time.time()
             dataset = get_dataset_v1(dc, tc)
             duration = time.time() - start_time
+            total_left_samples += len(dataset)
             transformed_datasets.append(dataset)
 
             # Collect statistics for this dataset
@@ -1954,6 +1961,7 @@ class LocalDatasetTransformationCache:
                 "instances_filtered": initial_size - len(dataset),
                 "frac_or_num_samples": dc.frac_or_num_samples,
                 "original_dataset_size": dc.original_dataset_size,
+                "process_time_in_second": duration,
                 "is_upsampled": dc.is_upsampled,
                 "upsampling_factor": dc.dataset_range / dc.original_dataset_size
                 if dc.original_dataset_size and dc.original_dataset_size > 0
@@ -1976,7 +1984,25 @@ class LocalDatasetTransformationCache:
 
             dataset_statistics.append(stats)
             dataset_order.append(dc.dataset_name)
+            print(
+                f"\n**** Summary for {i+1}. {stats['dataset_name']} ({stats['dataset_split']}) ****\n"
+                f" - Original dataset size: {stats['original_dataset_size']:,}\n"
+                f" - Initial instances: {stats['initial_instances']:,}\n"
+                f" - Fraction or number of samples: {stats['frac_or_num_samples']}\n"
+                f" - Is upsampled: {stats['is_upsampled']} - Upsampling factor: {stats['upsampling_factor']:.2f}\n"
+                f" - Final instances: {stats['final_instances']:,}\n"
+                f" - Instances filtered: {stats['instances_filtered']:,}\n"
+                f" - Processing time: {stats['process_time_in_second']:,.2f} seconds\n"
+                + (
+                    f" - Total tokens: {stats['total_tokens']:,}\n"
+                    f" - Trainable tokens: {stats['trainable_tokens']:,}\n"
+                    f" - Avg tokens per instance: {stats['avg_tokens_per_instance']:,.1f}\n"
+                    if "total_tokens" in stats
+                    else ""
+                )
+            )
 
+        print(f"\n**** TOTAL NUM.SAMPLES AFTER DATA TRANSFORMATION: {total_left_samples:,} ****\n")
         # Combine datasets
         combined_dataset = concatenate_datasets(transformed_datasets)
 
