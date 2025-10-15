@@ -1233,7 +1233,11 @@ def sft_span_seach_mask_out(
     additional_inputs = {}
     for k in ["tools", "documents"]:
         if k in row:
-            additional_inputs[k] = row[k]
+            if k == "tools":
+                if isinstance(row[k], str) and len(row[k]) > 0:
+                    additional_inputs[k] = json.loads(row[k])
+            else:
+                additional_inputs[k] = row[k]  
 
     if len(messages) == 0:
         raise ValueError("messages field is empty.")
@@ -1744,7 +1748,7 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
                 fn_kwargs=fn_kwargs,
                 remove_columns=[col for col in dataset.column_names if col not in target_columns],
                 num_proc=get_num_proc(len(dataset), num_proc, APPLY_CHAT_TEMPLATE_EXAMPLE_PER_SECOND_PER_CPU),
-                load_from_cache_file=False,  # force running from scratch (to ensure consistency across multiple datafiles)
+                load_from_cache_file=True,  # False to force running from scratch (to ensure consistency across multiple datafiles)
             )
         elif fn_type == "filter":
             dataset = dataset.filter(
@@ -1942,18 +1946,19 @@ class LocalDatasetTransformationCache:
             }
 
             # Count tokens if the dataset has been tokenized
-            if INPUT_IDS_KEY in dataset.column_names:
-                total_tokens = 0
-                trainable_tokens = 0
-                for sample in dataset:
-                    tokens = len(sample[INPUT_IDS_KEY])
-                    total_tokens += tokens
-                    if LABELS_KEY in sample:
-                        trainable_tokens += sum(1 for label in sample[LABELS_KEY] if label != -100)
+            # #== This part takes quite a bit of time for large datasets, so it's better to make it optional (via parameter):
+            # if INPUT_IDS_KEY in dataset.column_names:
+            #     total_tokens = 0
+            #     trainable_tokens = 0
+            #     for sample in dataset:
+            #         tokens = len(sample[INPUT_IDS_KEY])
+            #         total_tokens += tokens
+            #         if LABELS_KEY in sample:
+            #             trainable_tokens += sum(1 for label in sample[LABELS_KEY] if label != -100)
 
-                stats["total_tokens"] = total_tokens
-                stats["trainable_tokens"] = trainable_tokens
-                stats["avg_tokens_per_instance"] = total_tokens / len(dataset) if len(dataset) > 0 else 0
+            #     stats["total_tokens"] = total_tokens
+            #     stats["trainable_tokens"] = trainable_tokens
+            #     stats["avg_tokens_per_instance"] = total_tokens / len(dataset) if len(dataset) > 0 else 0
 
             dataset_statistics.append(stats)
             dataset_order.append(dc.dataset_name)
