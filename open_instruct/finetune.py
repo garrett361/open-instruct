@@ -495,6 +495,8 @@ def main(args: FlatArguments, tc: TokenizerConfig):
 
     if args.dataset_mixer is not None:
         args.dataset_mixer_list = [item for pair in args.dataset_mixer.items() for item in pair]
+        
+    #== data tokenization:
     with accelerator.main_process_first():
         transform_fn_args = [{"max_seq_length": args.max_seq_length}, {}]
         train_dataset = get_cached_dataset_tulu(
@@ -518,6 +520,7 @@ def main(args: FlatArguments, tc: TokenizerConfig):
         # visualize_token(train_dataset[0][INPUT_IDS_KEY], tokenizer)
         visualize_token_label(train_dataset[0][INPUT_IDS_KEY], train_dataset[0][LABELS_KEY], tokenizer)
 
+    #== not moving to model training if cache_dataset_only is set to True (i.e., stop after data tokenization)
     if args.cache_dataset_only:
         return
 

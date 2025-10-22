@@ -50,6 +50,7 @@ import os
 from dataclasses import asdict, dataclass, field
 from functools import cached_property, partial
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+import random
 
 from transformers.training_args import _convert_str_dict
 import numpy as np
@@ -1748,7 +1749,7 @@ def get_dataset_v1(dc: DatasetConfig, tc: TokenizerConfig):
                 fn_kwargs=fn_kwargs,
                 remove_columns=[col for col in dataset.column_names if col not in target_columns],
                 num_proc=get_num_proc(len(dataset), num_proc, APPLY_CHAT_TEMPLATE_EXAMPLE_PER_SECOND_PER_CPU),
-                load_from_cache_file=True,  # False to force running from scratch (to ensure consistency across multiple datafiles)
+                load_from_cache_file=True,  #== False to force running from scratch (to ensure consistency across multiple datafiles)
             )
         elif fn_type == "filter":
             dataset = dataset.filter(
@@ -1895,6 +1896,7 @@ class LocalDatasetTransformationCache:
         keep_in_memory: bool = False,
     ) -> Union[Dataset, Tuple[Dataset, Dict[str, Any]]]:
         """Load dataset from local cache if it exists, otherwise transform and cache it locally."""
+        
         cache_path = self.get_cache_path()
 
         # Check if the cache exists
@@ -1924,7 +1926,7 @@ class LocalDatasetTransformationCache:
             initial_size = len(dc.dataset) if dc.dataset else 0
             print(f"\n\n**** {i+1}. Processing `{dc.dataset_name}` with {len(dc.dataset):,} samples...")
             start_time = time.time()
-            dataset = get_dataset_v1(dc, tc)
+            dataset = get_dataset_v1(dc, tc) #== tokenize/transform ds in dc (possibly load from cache if existing)
             duration = time.time() - start_time
             total_left_samples += len(dataset)
             transformed_datasets.append(dataset)
@@ -1946,19 +1948,36 @@ class LocalDatasetTransformationCache:
             }
 
             # Count tokens if the dataset has been tokenized
-            # #== This part takes quite a bit of time for large datasets, so it's better to make it optional (via parameter):
-            # if INPUT_IDS_KEY in dataset.column_names:
-            #     total_tokens = 0
-            #     trainable_tokens = 0
-            #     for sample in dataset:
-            #         tokens = len(sample[INPUT_IDS_KEY])
-            #         total_tokens += tokens
-            #         if LABELS_KEY in sample:
-            #             trainable_tokens += sum(1 for label in sample[LABELS_KEY] if label != -100)
+            # #== This token count often takes long time. So, let N be the total samples, count tokens from:
+            #   At most 0.005*N (or 0.5%) or 5k randomly selected samples
+            #   Or the whole ds if its total samples is less than 5k
+    
+                    
+            if INPUT_IDS_KEY in dataset.column_names:
+                total_tokens = 0
+                trainable_tokens = 0
+                
+                # Determine sample size: use 0.5% of the dataset or at least 5000 samples
+                sample_size = max(int(0.005 * len(dataset)), 5000) 
+                sample_size = min(sample_size, len(dataset))  # cap at dataset size if smaller than 5K
 
-            #     stats["total_tokens"] = total_tokens
-            #     stats["trainable_tokens"] = trainable_tokens
-            #     stats["avg_tokens_per_instance"] = total_tokens / len(dataset) if len(dataset) > 0 else 0
+                # Randomly sample indices
+                sample_indices = random.sample(range(len(dataset)), sample_size)
+                
+                # Accumulate token counts from the sampled subset
+                for idx in sample_indices:
+                    sample = dataset[idx]
+                    tokens = len(sample[INPUT_IDS_KEY])
+                    total_tokens += tokens
+                    if LABELS_KEY in sample:
+                        # Count only tokens that are not ignored (-100)
+                        trainable_tokens += sum(1 for label in sample[LABELS_KEY] if label != -100)
+
+                #== Rescale statistics to approximate values for the full dataset
+                scale_factor = len(dataset) / sample_size
+                stats["total_tokens"] = int(total_tokens * scale_factor)
+                stats["trainable_tokens"] = int(trainable_tokens * scale_factor)
+                stats["avg_tokens_per_instance"] = total_tokens / sample_size if sample_size > 0 else 0
 
             dataset_statistics.append(stats)
             dataset_order.append(dc.dataset_name)
@@ -2091,6 +2110,7 @@ def get_cached_dataset_tulu_with_statistics(
             print(f"Dataset {dataset_name}: {original_size} -> {new_range} samples (factor: {frac_or_num_samples})")
             dataset_config.update_range(new_range)
             dcs.append(dataset_config)
+        #== Geneate a deterministic hash of both configs dct and tc for caching (folder name)
         dataset_config_hash = compute_config_hash(dcs, tc)
     if dataset_cache_mode == "local":
         cache = LocalDatasetTransformationCache(
@@ -2098,6 +2118,8 @@ def get_cached_dataset_tulu_with_statistics(
         )
     elif dataset_cache_mode == "hf":
         cache = DatasetTransformationCache(config_hash=dataset_config_hash, hf_entity=hf_entity)
+    
+    #== Either load existing one or perform tokenization+trainsformation:
     return cache.load_or_transform_dataset(
         dcs,
         tc,
