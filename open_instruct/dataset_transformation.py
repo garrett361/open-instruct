@@ -1922,6 +1922,10 @@ class LocalDatasetTransformationCache:
         total_left_samples = 0
         dataset_statistics = []
         dataset_order = []
+        
+        all_ds_total_tokens = 0
+        all_ds_trainable_tokens = 0
+        
         for i, dc in enumerate(dcs):
             initial_size = len(dc.dataset) if dc.dataset else 0
             print(f"\n\n**** {i+1}. Processing `{dc.dataset_name}` with {len(dc.dataset):,} samples...")
@@ -1951,15 +1955,14 @@ class LocalDatasetTransformationCache:
             # #== This token count often takes long time. So, let N be the total samples, count tokens from:
             #   At most 0.005*N (or 0.5%) or 5k randomly selected samples
             #   Or the whole ds if its total samples is less than 5k
-    
                     
-            if INPUT_IDS_KEY in dataset.column_names:
+            if INPUT_IDS_KEY in dataset.column_names and len(dataset) > 0:
                 total_tokens = 0
                 trainable_tokens = 0
                 
                 # Determine sample size: use 0.5% of the dataset or at least 5000 samples
                 sample_size = max(int(0.005 * len(dataset)), 5000) 
-                sample_size = min(sample_size, len(dataset))  # cap at dataset size if smaller than 5K
+                sample_size = min(sample_size, len(dataset))  # cap at dataset size if smaller than 5000
 
                 # Randomly sample indices
                 sample_indices = random.sample(range(len(dataset)), sample_size)
@@ -1977,7 +1980,10 @@ class LocalDatasetTransformationCache:
                 scale_factor = len(dataset) / sample_size
                 stats["total_tokens"] = int(total_tokens * scale_factor)
                 stats["trainable_tokens"] = int(trainable_tokens * scale_factor)
-                stats["avg_tokens_per_instance"] = total_tokens / sample_size if sample_size > 0 else 0
+                stats["avg_tokens_per_instance"] = round(total_tokens / sample_size, 2)
+                
+                all_ds_total_tokens += stats["total_tokens"]
+                all_ds_trainable_tokens += stats["trainable_tokens"]
 
             dataset_statistics.append(stats)
             dataset_order.append(dc.dataset_name)
@@ -1999,7 +2005,7 @@ class LocalDatasetTransformationCache:
                 )
             )
 
-        print(f"\n**** TOTAL NUM.SAMPLES AFTER DATA TRANSFORMATION: {total_left_samples:,} ****\n")
+        print(f"\n**** TOTAL NUM.SAMPLES AFTER DATA TRANSFORMATION: {total_left_samples:,} with TOTAL #TOKENS: {all_ds_total_tokens:,} #TRAINABLE TOKENS: {all_ds_trainable_tokens:,} ****\n")
         # Combine datasets
         combined_dataset = concatenate_datasets(transformed_datasets)
 
