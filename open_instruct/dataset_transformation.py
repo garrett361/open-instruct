@@ -912,6 +912,7 @@ def get_tokenizer_tulu_v2_2(tc: "TokenizerConfig"):
 
     return tokenizer
 
+
 def get_tokenizer_tulu_no_pad_tok_addition(tc: "TokenizerConfig"):
     config = AutoConfig.from_pretrained(tc.tokenizer_name_or_path, revision=tc.tokenizer_revision)
     # @vwxyzjn: "olmo" handles both `olmo2` and `olmoe`.
@@ -958,12 +959,13 @@ def get_tokenizer_tulu_no_pad_tok_addition(tc: "TokenizerConfig"):
 
     return tokenizer
 
+
 GET_TOKENIZER_FN = {
     "get_tokenizer_simple_v1": get_tokenizer_simple_v1,
     "get_tokenizer_tulu_v1": get_tokenizer_tulu_v1,  # old version, see https://github.com/allenai/open-instruct/pull/570
     "get_tokenizer_tulu_v2_1": get_tokenizer_tulu_v2_1,
     "get_tokenizer_tulu_v2_2": get_tokenizer_tulu_v2_2,
-    "get_tokenizer_tulu_no_pad_tok_addition": get_tokenizer_tulu_no_pad_tok_addition
+    "get_tokenizer_tulu_no_pad_tok_addition": get_tokenizer_tulu_no_pad_tok_addition,
 }
 
 DEFAULT_SFT_MESSAGES_KEY = "messages"
